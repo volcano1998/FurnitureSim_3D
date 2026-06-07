@@ -202,6 +202,39 @@ h1 {
   line-height: 1.65;
 }
 
+.project-tools {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.project-tools button {
+  padding: 9px;
+  border: 1px solid #cbd6d0;
+  border-radius: 5px;
+  background: white;
+  color: #42524a;
+  font-size: 0.68rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#saveProject {
+  border-color: var(--green);
+  background: var(--green);
+  color: white;
+}
+
+#projectStatus {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #7a847f;
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
 fieldset {
   min-width: 0;
   margin: 0;
@@ -394,7 +427,7 @@ input[type="range"]::-moz-range-thumb {
   padding: 17px 0 0;
 }
 
-.object-tools > div {
+.object-tools > div:first-child {
   display: grid;
   gap: 3px;
 }
@@ -408,19 +441,39 @@ input[type="range"]::-moz-range-thumb {
   font-size: 0.62rem;
 }
 
-#addObject {
+.object-actions {
+  display: flex;
+  gap: 6px;
+}
+
+#addObject,
+#deleteObject {
   padding: 8px 11px;
-  border: 0;
   border-radius: 5px;
-  background: var(--green);
-  color: white;
   font-size: 0.68rem;
   font-weight: 600;
   cursor: pointer;
 }
 
+#addObject {
+  border: 0;
+  background: var(--green);
+  color: white;
+}
+
 #addObject:hover {
   background: var(--green-dark);
+}
+
+#deleteObject {
+  border: 1px solid #d7aaa5;
+  background: #fff8f7;
+  color: #a33f35;
+}
+
+#deleteObject:hover {
+  border-color: #bd736b;
+  background: #fce9e7;
 }
 
 button:disabled,
@@ -619,6 +672,47 @@ input:disabled {
   line-height: 1.45;
 }
 
+.measurement-tools {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.measurement-tools button {
+  padding: 8px;
+  border: 1px solid #d1bc7c;
+  border-radius: 5px;
+  background: #fff9e8;
+  color: #755f20;
+  font-size: 0.65rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.measurement-tools button.is-active {
+  background: #d9ad32;
+  color: white;
+}
+
+#measurementStatus {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: #777167;
+  font-size: 0.61rem;
+  line-height: 1.4;
+}
+
+.manual-stage kbd {
+  padding: 1px 5px;
+  border: 1px solid #b9a9c3;
+  border-radius: 4px;
+  background: white;
+  color: #67447f;
+  font: 700 0.63rem "DM Mono", monospace;
+}
+
 .simulation-stage {
   position: relative;
   display: grid;
@@ -694,7 +788,14 @@ input:disabled {
   gap: 7px;
 }
 
-#runSimulation {
+.simulation-run-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+
+#runSimulation,
+#startManual {
   padding: 9px;
   border: 0;
   border-radius: 5px;
@@ -703,6 +804,94 @@ input:disabled {
   font-size: 0.7rem;
   font-weight: 700;
   cursor: pointer;
+}
+
+#startManual {
+  background: #7b5496;
+}
+
+.manual-stage {
+  display: grid;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #cbb9d7;
+  border-radius: 7px;
+  background: #fbf8fd;
+}
+
+.manual-stage[hidden] {
+  display: none;
+}
+
+.manual-heading,
+.manual-control,
+.manual-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.manual-heading strong {
+  color: #67447f;
+  font-size: 0.72rem;
+}
+
+.manual-heading button,
+.manual-actions button {
+  padding: 6px 8px;
+  border: 1px solid #cbb9d7;
+  border-radius: 5px;
+  background: white;
+  color: #67447f;
+  font-size: 0.61rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.manual-stage > p {
+  margin: 0;
+  color: #6d6472;
+  font-size: 0.62rem;
+  line-height: 1.4;
+}
+
+.manual-control {
+  display: grid;
+  grid-template-columns: 1fr auto;
+}
+
+.manual-control input {
+  grid-column: 1 / -1;
+}
+
+.manual-control label,
+.manual-control output,
+.manual-control-grid label {
+  color: #615969;
+  font-size: 0.62rem;
+}
+
+.manual-control-grid {
+  display: grid;
+  gap: 7px;
+}
+
+.manual-control-grid label {
+  display: grid;
+  grid-template-columns: 36px 1fr;
+  align-items: center;
+  gap: 7px;
+}
+
+#manualStatus.is-valid {
+  color: #238455;
+  font-weight: 700;
+}
+
+#manualStatus.is-invalid {
+  color: #b33f37;
+  font-weight: 700;
 }
 
 #simulationStatus {

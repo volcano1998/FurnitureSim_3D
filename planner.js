@@ -82,6 +82,85 @@ export function isPoseValid(pose, furniture, environment, clearance = 0) {
   return true;
 }
 
+export function isPoseValidThroughOpenings(
+  pose,
+  furniture,
+  environment,
+  clearance,
+  openings,
+) {
+  const quaternion = poseQuaternion(pose);
+  const center = new THREE.Vector3(pose.x, pose.y, pose.z);
+  const half = {
+    x: furniture.length / 2 + clearance,
+    y: furniture.width / 2 + clearance,
+    z: furniture.height / 2 + clearance,
+  };
+  const samples = [-1, -0.5, 0, 0.5, 1];
+
+  for (const x of samples) {
+    for (const y of samples) {
+      for (const z of samples) {
+        if (
+          Math.abs(x) !== 1 &&
+          Math.abs(y) !== 1 &&
+          Math.abs(z) !== 1
+        ) {
+          continue;
+        }
+        const point = new THREE.Vector3(
+          x * half.x,
+          y * half.y,
+          z * half.z,
+        ).applyQuaternion(quaternion).add(center);
+        const inside = environment.volumes.some(
+          (volume) => pointInVolume(point, volume),
+        );
+        if (!inside && !openings.some((opening) =>
+          pointPassesThroughOpening(point, opening))) {
+          return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+function pointPassesThroughOpening(point, opening) {
+  const offset = point.clone().sub(opening.center);
+  const normalDistance = offset.dot(opening.normal);
+  const projected = {
+    u: offset.dot(opening.u),
+    v: offset.dot(opening.v),
+  };
+  if (opening.stagingPadding && normalDistance > 1e-5) {
+    return (
+      Math.abs(projected.u) <= opening.uLimit + opening.stagingPadding &&
+      Math.abs(projected.v) <= opening.vLimit + opening.stagingPadding
+    );
+  }
+  return (
+    normalDistance >= -1e-5 &&
+    pointInConvexPolygon(projected, opening.polygon)
+  );
+}
+
+function pointInConvexPolygon(point, polygon) {
+  let sign = 0;
+  for (let index = 0; index < polygon.length; index += 1) {
+    const a = polygon[index];
+    const b = polygon[(index + 1) % polygon.length];
+    const cross =
+      (b.u - a.u) * (point.v - a.v) -
+      (b.v - a.v) * (point.u - a.u);
+    if (Math.abs(cross) <= 1e-5) continue;
+    const edgeSign = Math.sign(cross);
+    if (sign && edgeSign !== sign) return false;
+    sign = edgeSign;
+  }
+  return true;
+}
+
 export function interpolatePose(a, b, t) {
   return {
     x: THREE.MathUtils.lerp(a.x, b.x, t),
@@ -91,6 +170,46 @@ export function interpolatePose(a, b, t) {
     pitch: a.pitch + shortestAngle(a.pitch, b.pitch) * t,
     roll: a.roll + shortestAngle(a.roll, b.roll) * t,
   };
+}
+
+export function isEdgeValidThroughOpenings(
+  poseA,
+  poseB,
+  furniture,
+  environment,
+  clearance,
+  openings,
+  resolution = 0.12,
+) {
+  const positionDistance = Math.hypot(
+    poseB.x - poseA.x,
+    poseB.y - poseA.y,
+    poseB.z - poseA.z,
+  );
+  const angularDistance = Math.max(
+    Math.abs(shortestAngle(poseA.yaw, poseB.yaw)),
+    Math.abs(shortestAngle(poseA.pitch, poseB.pitch)),
+    Math.abs(shortestAngle(poseA.roll, poseB.roll)),
+  );
+  const steps = Math.max(
+    2,
+    Math.ceil(positionDistance / resolution),
+    Math.ceil(angularDistance / THREE.MathUtils.degToRad(3)),
+  );
+  for (let index = 1; index <= steps; index += 1) {
+    if (
+      !isPoseValidThroughOpenings(
+        interpolatePose(poseA, poseB, index / steps),
+        furniture,
+        environment,
+        clearance,
+        openings,
+      )
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 export function isEdgeValid(
@@ -131,36 +250,47 @@ export function isEdgeValid(
   return true;
 }
 
-export function openingPoseCandidates(opening, furniture, environment, clearance) {
+export function openingPoseCandidates(
+  opening,
+  furniture,
+  environment,
+  clearance,
+  allowRoll = false,
+) {
   const candidates = [];
-  const yawAngles = Array.from({ length: 12 }, (_, index) => index * TAU / 12);
-  const pitchAngles = [0, -15, 15, -30, 30].map(THREE.MathUtils.degToRad);
+  const yawAngles = Array.from({ length: 24 }, (_, index) => index * TAU / 24);
+  const pitchAngles = [0, -15, 15, -30, 30, -45, 45, -60, 60]
+    .map(THREE.MathUtils.degToRad);
+  const rollAngles = (allowRoll ? [0, -30, 30, -60, 60, 90] : [0])
+    .map(THREE.MathUtils.degToRad);
 
   yawAngles.forEach((yaw) => {
     pitchAngles.forEach((pitch) => {
-      const base = {
-        x: opening.center.x,
-        y: opening.center.y,
-        z: opening.center.z,
-        yaw,
-        pitch,
-        roll: 0,
-      };
-      const vertices = furnitureVertices(
-        { ...base, x: 0, y: 0, z: 0 },
-        furniture,
-        clearance,
-      );
-      const extent = Math.max(
-        ...vertices.map((vertex) => Math.abs(vertex.dot(opening.normal))),
-      );
-      const center = opening.center
-        .clone()
-        .addScaledVector(opening.normal, -(extent + 0.02));
-      const pose = { ...base, x: center.x, y: center.y, z: center.z };
-      if (isPoseValid(pose, furniture, environment, clearance)) {
-        candidates.push(pose);
-      }
+      rollAngles.forEach((roll) => {
+        const base = {
+          x: opening.center.x,
+          y: opening.center.y,
+          z: opening.center.z,
+          yaw,
+          pitch,
+          roll,
+        };
+        const vertices = furnitureVertices(
+          { ...base, x: 0, y: 0, z: 0 },
+          furniture,
+          clearance,
+        );
+        const extent = Math.max(
+          ...vertices.map((vertex) => Math.abs(vertex.dot(opening.normal))),
+        );
+        const center = opening.center
+          .clone()
+          .addScaledVector(opening.normal, -(extent + 0.02));
+        const pose = { ...base, x: center.x, y: center.y, z: center.z };
+        if (isPoseValid(pose, furniture, environment, clearance)) {
+          candidates.push(pose);
+        }
+      });
     });
   });
   return candidates;
@@ -179,12 +309,14 @@ export async function planRRTConnect({
     furniture,
     environment,
     config.clearance,
+    config.allowRoll,
   );
   const goals = openingPoseCandidates(
     exit,
     furniture,
     environment,
     config.clearance,
+    config.allowRoll,
   );
   if (!starts.length || !goals.length) {
     return {
@@ -196,6 +328,38 @@ export async function planRRTConnect({
 
   const treeStart = starts.map((pose) => ({ pose, parent: -1 }));
   const treeGoal = goals.map((pose) => ({ pose, parent: -1 }));
+
+  const directPairs = [];
+  const directStarts = evenlySpacedCandidates(starts, 48);
+  const directGoals = evenlySpacedCandidates(goals, 48);
+  directStarts.forEach((start) => {
+    directGoals.forEach((goal) => {
+      directPairs.push({ start, goal, distance: poseDistance(start, goal) });
+    });
+  });
+  directPairs.sort((a, b) => a.distance - b.distance);
+  for (const { start, goal } of directPairs.slice(0, 240)) {
+    if (
+      isEdgeValid(
+        start,
+        goal,
+        furniture,
+        environment,
+        config.clearance,
+        config.positionStep / 3,
+      )
+    ) {
+      return {
+        possible: true,
+        path: resamplePath(
+          [start, goal],
+          config.animationStep ?? 0.08,
+        ),
+        minimumClearanceEstimate: config.clearance,
+      };
+    }
+  }
+
   let treeA = treeStart;
   let treeB = treeGoal;
   const bounds = environment.bounds;
@@ -203,7 +367,12 @@ export async function planRRTConnect({
   for (let iteration = 0; iteration < config.maxIterations; iteration += 1) {
     const target = Math.random() < config.goalBias
       ? treeB[Math.floor(Math.random() * treeB.length)].pose
-      : randomPose(bounds, config.allowRoll);
+      : randomValidPose(
+        environment,
+        furniture,
+        config,
+        bounds,
+      );
     const newIndex = extendTree(
       treeA,
       target,
@@ -312,7 +481,7 @@ function extendTree(tree, target, furniture, environment, config) {
 }
 
 function connectTree(tree, target, furniture, environment, config) {
-  for (let count = 0; count < 80; count += 1) {
+  for (let count = 0; count < 160; count += 1) {
     const index = extendTree(tree, target, furniture, environment, config);
     if (index < 0) return -1;
     if (poseDistance(tree[index].pose, target) < config.positionStep * 0.45) {
@@ -391,6 +560,66 @@ function randomPose(bounds, allowRoll = false) {
     pitch: (Math.random() - 0.5) * Math.PI * 0.75,
     roll: allowRoll ? (Math.random() - 0.5) * Math.PI * 0.5 : 0,
   };
+}
+
+function randomValidPose(environment, furniture, config, bounds) {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const volume =
+      environment.volumes[
+        Math.floor(Math.random() * environment.volumes.length)
+      ];
+    const center = volume.origin
+      .clone()
+      .addScaledVector(volume.a, Math.random())
+      .addScaledVector(volume.b, Math.random())
+      .addScaledVector(volume.c, Math.random());
+    const useAlignedAngles = Math.random() < 0.7;
+    const pose = {
+      x: center.x,
+      y: center.y,
+      z: center.z,
+      yaw: useAlignedAngles
+        ? Math.round(Math.random() * 24) * TAU / 24
+        : Math.random() * TAU - Math.PI,
+      pitch: useAlignedAngles
+        ? THREE.MathUtils.degToRad(
+          [-60, -45, -30, -15, 0, 15, 30, 45, 60][
+            Math.floor(Math.random() * 9)
+          ],
+        )
+        : (Math.random() - 0.5) * Math.PI * 0.9,
+      roll: config.allowRoll
+        ? (useAlignedAngles
+          ? THREE.MathUtils.degToRad(
+            [-90, -60, -30, 0, 30, 60, 90][
+              Math.floor(Math.random() * 7)
+            ],
+          )
+          : (Math.random() - 0.5) * Math.PI)
+        : 0,
+    };
+    if (
+      isPoseValid(
+        pose,
+        furniture,
+        environment,
+        config.clearance,
+      )
+    ) {
+      return pose;
+    }
+  }
+  return randomPose(bounds, config.allowRoll);
+}
+
+function evenlySpacedCandidates(candidates, limit) {
+  if (candidates.length <= limit) return candidates;
+  return Array.from(
+    { length: limit },
+    (_, index) => candidates[
+      Math.floor(index * candidates.length / limit)
+    ],
+  );
 }
 
 function shortestAngle(from, to) {

@@ -1,8 +1,14 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
+  furnitureVertices,
+  isEdgeValid,
+  isEdgeValidThroughOpenings,
   isPoseValid,
+  isPoseValidThroughOpenings,
+  openingPoseCandidates,
   planRRTConnect,
+  pointInVolume,
   poseQuaternion,
 } from "./planner.js";
 
@@ -14,6 +20,8 @@ const defaults = {
   angleAC: 90,
   angleBC: 90,
 };
+const PROJECT_FORMAT = "can-it-fit";
+const PROJECT_VERSION = 1;
 
 const faces = [
   [0, 2, 3, 0, 3, 1],
@@ -125,6 +133,18 @@ let modelConfirmed = false;
 let editorTemporarilyDisabled = false;
 let openingPickRole = "entrance";
 let openingHighlights = [];
+let manualMode = false;
+let manualPose = null;
+let manualStartPose = null;
+let manualDragging = false;
+let manualDragPointerId = null;
+let manualWon = false;
+let manualHasEntered = false;
+let moveKeyHeld = false;
+const manualTrailPoints = [];
+let measurementMode = false;
+const measuredFaces = [];
+const measurementOverlays = [];
 
 const furnitureMaterial = new THREE.MeshStandardMaterial({
   color: 0x2eaf68,
@@ -152,6 +172,32 @@ routeLine.renderOrder = 9;
 scene.add(routeLine);
 const routeFrames = new THREE.Group();
 scene.add(routeFrames);
+const manualTrail = new THREE.Line(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({
+    color: 0x9b59b6,
+    depthTest: false,
+    transparent: true,
+    opacity: 0.9,
+  }),
+);
+manualTrail.renderOrder = 10;
+manualTrail.visible = false;
+scene.add(manualTrail);
+const measurementLine = new THREE.Line(
+  new THREE.BufferGeometry(),
+  new THREE.LineBasicMaterial({
+    color: 0xd9ad32,
+    depthTest: false,
+  }),
+);
+measurementLine.visible = false;
+measurementLine.renderOrder = 11;
+scene.add(measurementLine);
+const measurementLabel = createLabel("", "#9a7414");
+measurementLabel.visible = false;
+measurementLabel.renderOrder = 12;
+scene.add(measurementLabel);
 
 function createSolid(params = defaults, position = new THREE.Vector3()) {
   const root = new THREE.Group();
@@ -222,6 +268,275 @@ function createSolid(params = defaults, position = new THREE.Vector3()) {
   return object;
 }
 
+function serializeProject() {
+  return {
+    format: PROJECT_FORMAT,
+    version: PROJECT_VERSION,
+    savedAt: new Date().toISOString(),
+    objects: objects.map((object) => ({
+      id: object.id,
+      params: { ...object.params },
+      position: object.root.position.toArray(),
+      quaternion: object.root.quaternion.toArray(),
+    })),
+    attachments: attachments.map((attachment) => ({
+      id: attachment.id,
+      aId: attachment.a.id,
+      bId: attachment.b.id,
+      faceA: attachment.faceA,
+      faceB: attachment.faceB,
+      rotation: attachment.rotation,
+      offsetU: attachment.offsetU,
+      offsetV: attachment.offsetV,
+    })),
+    selectedObjectId: selectedObject?.id ?? null,
+    modelConfirmed,
+    entranceId: document.querySelector("#entranceFace").value,
+    exitId: document.querySelector("#exitFace").value,
+    openingsConfirmed: !document.querySelector("#furnitureStage").hidden,
+    furniture: {
+      length: Number(document.querySelector("#furnitureLength").value),
+      width: Number(document.querySelector("#furnitureWidth").value),
+      height: Number(document.querySelector("#furnitureHeight").value),
+      clearance: Number(document.querySelector("#clearance").value),
+      allowRoll: document.querySelector("#allowRoll").checked,
+    },
+    preferences: {
+      showAnnotations: document.querySelector("#showAnnotations").checked,
+    },
+    camera: {
+      position: camera.position.toArray(),
+      target: controls.target.toArray(),
+    },
+  };
+}
+
+function validateProject(data) {
+  if (
+    !data ||
+    data.format !== PROJECT_FORMAT ||
+    data.version !== PROJECT_VERSION ||
+    !Array.isArray(data.objects) ||
+    data.objects.length === 0 ||
+    !Array.isArray(data.attachments)
+  ) {
+    throw new Error("This is not a supported Can It Fit? project file.");
+  }
+
+  const ids = new Set();
+  data.objects.forEach((object) => {
+    const params = object.params ?? {};
+    if (
+      !Number.isInteger(object.id) ||
+      ids.has(object.id) ||
+      !object.params ||
+      !Array.isArray(object.position) ||
+      object.position.length !== 3 ||
+      !Array.isArray(object.quaternion) ||
+      object.quaternion.length !== 4 ||
+      !calculateGeometry(object.params)
+    ) {
+      throw new Error("The project contains invalid object geometry.");
+    }
+    const numbers = [
+      ...Object.values(object.params),
+      ...object.position,
+      ...object.quaternion,
+    ];
+    if (numbers.some((value) => !Number.isFinite(value))) {
+      throw new Error("The project contains invalid numeric values.");
+    }
+    if (
+      params.aLength <= 0 ||
+      params.bLength <= 0 ||
+      params.cLength <= 0 ||
+      new THREE.Quaternion().fromArray(object.quaternion).lengthSq() < 1e-10
+    ) {
+      throw new Error("The project contains invalid dimensions or rotation.");
+    }
+    ids.add(object.id);
+  });
+
+  const attachmentIds = new Set();
+  data.attachments.forEach((attachment) => {
+    if (
+      !Number.isInteger(attachment.id) ||
+      attachmentIds.has(attachment.id) ||
+      !ids.has(attachment.aId) ||
+      !ids.has(attachment.bId) ||
+      attachment.aId === attachment.bId ||
+      !Number.isInteger(attachment.faceA) ||
+      !Number.isInteger(attachment.faceB) ||
+      attachment.faceA < 0 ||
+      attachment.faceA >= faces.length ||
+      attachment.faceB < 0 ||
+      attachment.faceB >= faces.length
+    ) {
+      throw new Error("The project contains an invalid attachment.");
+    }
+    attachmentIds.add(attachment.id);
+  });
+}
+
+function disposeSolidObject(object) {
+  scene.remove(object.root);
+  object.mesh.geometry.dispose();
+  object.materials.forEach((material) => material.dispose());
+  object.edgeMeshes[0]?.geometry.dispose();
+  new Set(object.edges.children.map((edge) => edge.material))
+    .forEach((material) => material.dispose());
+  object.vectorLabels.forEach((label) => {
+    label.material.map?.dispose();
+    label.material.dispose();
+  });
+}
+
+function clearProjectScene() {
+  if (manualMode) stopManualChallenge();
+  clearMeasurement();
+  clearRouteVisualization();
+  cancelJoin();
+  openingHighlights.forEach((highlight) => {
+    scene.remove(highlight);
+    highlight.geometry.dispose();
+    highlight.material.dispose();
+  });
+  openingHighlights = [];
+  objects.forEach(disposeSolidObject);
+  objects.length = 0;
+  attachments.length = 0;
+  selectedObject = null;
+  nextObjectId = 1;
+  nextAttachmentId = 1;
+}
+
+function restoreProject(data) {
+  validateProject(data);
+  clearProjectScene();
+  modelConfirmed = false;
+  editorTemporarilyDisabled = false;
+
+  const objectMap = new Map();
+  data.objects.forEach((saved) => {
+    const object = createSolid(
+      saved.params,
+      new THREE.Vector3().fromArray(saved.position),
+    );
+    object.id = saved.id;
+    object.root.quaternion.fromArray(saved.quaternion).normalize();
+    object.params = { ...saved.params };
+    objectMap.set(object.id, object);
+  });
+  nextObjectId = Math.max(...data.objects.map((object) => object.id)) + 1;
+
+  data.attachments.forEach((saved) => {
+    attachments.push({
+      id: saved.id,
+      a: objectMap.get(saved.aId),
+      b: objectMap.get(saved.bId),
+      faceA: saved.faceA,
+      faceB: saved.faceB,
+      rotation: Number(saved.rotation) || 0,
+      offsetU: Number(saved.offsetU) || 0,
+      offsetV: Number(saved.offsetV) || 0,
+    });
+  });
+  nextAttachmentId = attachments.length
+    ? Math.max(...attachments.map((attachment) => attachment.id)) + 1
+    : 1;
+
+  document.querySelector("#showAnnotations").checked =
+    Boolean(data.preferences?.showAnnotations);
+  objects.forEach((object) => {
+    object.vectorLabels.forEach((label) => {
+      label.visible = document.querySelector("#showAnnotations").checked;
+    });
+  });
+  updateAttachmentFaceVisibility();
+
+  const furniture = data.furniture ?? {};
+  document.querySelector("#furnitureLength").value = furniture.length ?? 2.5;
+  document.querySelector("#furnitureWidth").value = furniture.width ?? 1.2;
+  document.querySelector("#furnitureHeight").value = furniture.height ?? 1.2;
+  document.querySelector("#clearance").value = furniture.clearance ?? 0.1;
+  document.querySelector("#allowRoll").checked = Boolean(furniture.allowRoll);
+
+  const restoredSelection =
+    objectMap.get(data.selectedObjectId) ?? objects[0];
+  selectObject(restoredSelection);
+  if (Array.isArray(data.camera?.position) && data.camera.position.length === 3) {
+    camera.position.fromArray(data.camera.position);
+  }
+  if (Array.isArray(data.camera?.target) && data.camera.target.length === 3) {
+    controls.target.fromArray(data.camera.target);
+  }
+  controls.update();
+
+  if (data.modelConfirmed) {
+    modelConfirmed = true;
+    updateOpeningOptions();
+    document.querySelector("#entranceFace").value = data.entranceId ?? "";
+    document.querySelector("#exitFace").value = data.exitId ?? "";
+    document.querySelector("#confirmModel").hidden = true;
+    document.querySelector("#editModel").hidden = false;
+    document.querySelector("#openingStage").hidden = false;
+    document.querySelector("#furnitureStage").hidden =
+      !data.openingsConfirmed;
+    setHallwayTransparency(true);
+    document.querySelector("#workflowStatus").textContent =
+      data.openingsConfirmed
+        ? "Project restored. Furniture settings are ready."
+        : "Project restored. Choose the entrance and exit.";
+  } else {
+    document.querySelector("#confirmModel").hidden = false;
+    document.querySelector("#editModel").hidden = true;
+    document.querySelector("#openingStage").hidden = true;
+    document.querySelector("#furnitureStage").hidden = true;
+    setHallwayTransparency(false);
+    document.querySelector("#workflowStatus").textContent =
+      "Project restored in editing mode.";
+  }
+  document.querySelector("#simulationActions").hidden = true;
+  document.querySelector("#topView").hidden = true;
+  applyWorkflowLocks();
+  refreshObjectColors();
+  updateAttachmentUI();
+  updateOpeningOptions();
+  updateAttachmentFaceVisibility();
+  refreshOpeningHighlights();
+}
+
+function saveProject() {
+  const payload = serializeProject();
+  const url = URL.createObjectURL(
+    new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    }),
+  );
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `can-it-fit-project-${new Date().toISOString().slice(0, 10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  document.querySelector("#projectStatus").textContent =
+    `Project saved with ${objects.length} object${objects.length === 1 ? "" : "s"}.`;
+}
+
+async function loadProjectFile(file) {
+  const status = document.querySelector("#projectStatus");
+  try {
+    const data = JSON.parse(await file.text());
+    validateProject(data);
+    restoreProject(data);
+    status.textContent =
+      `Loaded ${objects.length} object${objects.length === 1 ? "" : "s"} successfully.`;
+  } catch (error) {
+    status.textContent = error instanceof Error
+      ? error.message
+      : "The project could not be loaded.";
+  }
+}
+
 function calculateGeometry(params) {
   const angleAB = THREE.MathUtils.degToRad(params.angleAB);
   const cosAB = Math.cos(angleAB);
@@ -284,19 +599,6 @@ function createLabel(text, color) {
   const canvas = document.createElement("canvas");
   canvas.width = 128;
   canvas.height = 64;
-  const context = canvas.getContext("2d");
-  context.fillStyle = "rgba(255, 255, 255, 0.96)";
-  context.beginPath();
-  context.roundRect(3, 3, 122, 58, 16);
-  context.fill();
-  context.strokeStyle = color;
-  context.lineWidth = 4;
-  context.stroke();
-  context.fillStyle = color;
-  context.font = "500 28px DM Mono, monospace";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 64, 33);
   const texture = new THREE.CanvasTexture(canvas);
   texture.colorSpace = THREE.SRGBColorSpace;
   const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
@@ -304,9 +606,31 @@ function createLabel(text, color) {
     depthTest: false,
     transparent: true,
   }));
+  sprite.userData.labelCanvas = canvas;
+  sprite.userData.labelColor = color;
+  redrawLabel(sprite, text);
   sprite.scale.set(1, 0.5, 1);
   sprite.renderOrder = 7;
   return sprite;
+}
+
+function redrawLabel(sprite, text) {
+  const canvas = sprite.userData.labelCanvas;
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.fillStyle = "rgba(255, 255, 255, 0.96)";
+  context.beginPath();
+  context.roundRect(3, 3, 122, 58, 16);
+  context.fill();
+  context.strokeStyle = sprite.userData.labelColor;
+  context.lineWidth = 4;
+  context.stroke();
+  context.fillStyle = sprite.userData.labelColor;
+  context.font = "500 28px DM Mono, monospace";
+  context.textAlign = "center";
+  context.textBaseline = "middle";
+  context.fillText(text, 64, 33);
+  sprite.material.map.needsUpdate = true;
 }
 
 const fields = {};
@@ -326,6 +650,7 @@ for (const control of document.querySelectorAll(".control")) {
 function setFieldValue(key, rawValue) {
   if (syncingFields || !selectedObject) return;
   if (attachmentsFor(selectedObject).length) return;
+  clearMeasurement();
   clearRouteVisualization();
   const field = fields[key];
   const value = THREE.MathUtils.clamp(
@@ -439,6 +764,8 @@ function updateObjectUI() {
     `Object ${selectedObject.id} selected`;
   document.querySelector("#objectCount").textContent =
     `${objects.length} object${objects.length === 1 ? "" : "s"} in scene`;
+  document.querySelector("#deleteObject").disabled =
+    objects.length <= 1 || editorTemporarilyDisabled || modelConfirmed;
 }
 
 function attachmentsFor(object) {
@@ -503,6 +830,17 @@ function updateAttachmentFaceVisibility() {
     attachment.a.materials[attachment.faceA].visible = false;
     attachment.b.materials[attachment.faceB].visible = false;
   });
+  if (modelConfirmed && !document.querySelector("#furnitureStage").hidden) {
+    const openingIds = [
+      document.querySelector("#entranceFace").value,
+      document.querySelector("#exitFace").value,
+    ];
+    const environment = selectedObject ? buildEnvironment() : null;
+    openingIds.forEach((id) => {
+      const opening = environment?.openings.find((item) => item.id === id);
+      if (opening) opening.object.materials[opening.faceIndex].visible = false;
+    });
+  }
 }
 
 function selectedAttachment() {
@@ -618,6 +956,12 @@ function buildEnvironment() {
     for (let faceIndex = 0; faceIndex < faceQuads.length; faceIndex += 1) {
       if (internalFaces.has(`${object.id}:${faceIndex}`)) continue;
       const frame = outwardFaceFrame(object, faceIndex);
+      const openingVertices = faceQuads[faceIndex].map((vertexIndex) =>
+        object.vertices[vertexIndex]
+          .clone()
+          .applyQuaternion(object.root.quaternion)
+          .add(object.root.position),
+      );
       openings.push({
         id: `${object.id}:${faceIndex}`,
         object,
@@ -627,6 +971,21 @@ function buildEnvironment() {
         normal: frame.normal,
         u: frame.u,
         v: frame.v,
+        uLimit: Math.max(
+          ...openingVertices.map((vertex) =>
+            Math.abs(vertex.clone().sub(frame.center).dot(frame.u))),
+        ),
+        vLimit: Math.max(
+          ...openingVertices.map((vertex) =>
+            Math.abs(vertex.clone().sub(frame.center).dot(frame.v))),
+        ),
+        polygon: openingVertices.map((vertex) => {
+          const offset = vertex.clone().sub(frame.center);
+          return {
+            u: offset.dot(frame.u),
+            v: offset.dot(frame.v),
+          };
+        }),
       });
     }
   });
@@ -645,14 +1004,146 @@ function buildEnvironment() {
 
 function outwardFaceFrame(object, faceIndex) {
   const frame = faceFrame(object, faceIndex, true);
-  const objectCenter = worldVertices(object)
-    .reduce((sum, vertex) => sum.add(vertex), new THREE.Vector3())
-    .multiplyScalar(1 / 8);
-  if (frame.normal.dot(frame.center.clone().sub(objectCenter)) < 0) {
+  const volume = {
+    origin: object.root.position.clone(),
+    a: object.vectors[0].clone().applyQuaternion(object.root.quaternion),
+    b: object.vectors[1].clone().applyQuaternion(object.root.quaternion),
+    c: object.vectors[2].clone().applyQuaternion(object.root.quaternion),
+  };
+  const probeDistance = Math.max(
+    1e-4,
+    Math.min(volume.a.length(), volume.b.length(), volume.c.length()) * 1e-4,
+  );
+  const positiveProbe = frame.center
+    .clone()
+    .addScaledVector(frame.normal, probeDistance);
+  const negativeProbe = frame.center
+    .clone()
+    .addScaledVector(frame.normal, -probeDistance);
+  const positiveInside = pointInVolume(positiveProbe, volume, 1e-8);
+  const negativeInside = pointInVolume(negativeProbe, volume, 1e-8);
+
+  if (positiveInside && !negativeInside) {
     frame.normal.negate();
     frame.v.negate();
   }
   return frame;
+}
+
+function toggleMeasurementMode() {
+  if (joinState || manualMode) return;
+  measurementMode = !measurementMode;
+  if (measurementMode) clearMeasurement(false);
+  const button = document.querySelector("#measureSurfaces");
+  button.classList.toggle("is-active", measurementMode);
+  button.textContent = measurementMode
+    ? "Selecting surfaces…"
+    : "Measure parallel surfaces";
+  document.querySelector("#measurementStatus").textContent = measurementMode
+    ? "Click the first surface."
+    : "Click two parallel surfaces to measure their perpendicular distance.";
+}
+
+function selectMeasurementFace(hit) {
+  const object = hit.object.userData.object;
+  const faceIndex = Math.floor(hit.faceIndex / 2);
+  const frame = outwardFaceFrame(object, faceIndex);
+  measuredFaces.push({ object, faceIndex, frame });
+  addMeasurementOverlay(object, faceIndex);
+
+  if (measuredFaces.length === 1) {
+    document.querySelector("#measurementStatus").textContent =
+      "First surface selected. Click a parallel surface.";
+    return;
+  }
+
+  const [first, second] = measuredFaces;
+  const alignment = Math.abs(first.frame.normal.dot(second.frame.normal));
+  if (alignment < 0.999) {
+    measuredFaces.pop();
+    const overlay = measurementOverlays.pop();
+    scene.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+    document.querySelector("#measurementStatus").textContent =
+      "Those surfaces are not parallel. Choose another second surface.";
+    return;
+  }
+
+  const signedDistance = second.frame.center
+    .clone()
+    .sub(first.frame.center)
+    .dot(first.frame.normal);
+  const distance = Math.abs(signedDistance);
+  const endpoint = first.frame.center
+    .clone()
+    .addScaledVector(first.frame.normal, signedDistance);
+  measurementLine.geometry.dispose();
+  measurementLine.geometry = new THREE.BufferGeometry().setFromPoints([
+    first.frame.center,
+    endpoint,
+  ]);
+  measurementLine.visible = true;
+  measurementLabel.position.copy(first.frame.center).lerp(endpoint, 0.5);
+  redrawLabel(measurementLabel, distance.toFixed(3));
+  measurementLabel.visible = true;
+  measurementMode = false;
+  document.querySelector("#measureSurfaces").classList.remove("is-active");
+  document.querySelector("#measureSurfaces").textContent =
+    "Measure parallel surfaces";
+  document.querySelector("#clearMeasurement").hidden = false;
+  document.querySelector("#measurementStatus").textContent =
+    `Perpendicular distance: ${distance.toFixed(3)} model units.`;
+}
+
+function addMeasurementOverlay(object, faceIndex) {
+  const vertices = faceQuads[faceIndex].map(
+    (index) => object.vertices[index]
+      .clone()
+      .applyQuaternion(object.root.quaternion)
+      .add(object.root.position),
+  );
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute([
+      ...vertices[0].toArray(),
+      ...vertices[1].toArray(),
+      ...vertices[2].toArray(),
+      ...vertices[0].toArray(),
+      ...vertices[2].toArray(),
+      ...vertices[3].toArray(),
+    ], 3),
+  );
+  const overlay = new THREE.Mesh(
+    geometry,
+    new THREE.MeshBasicMaterial({
+      color: 0xf2c94c,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  overlay.renderOrder = 10;
+  scene.add(overlay);
+  measurementOverlays.push(overlay);
+}
+
+function clearMeasurement(resetMessage = true) {
+  measuredFaces.length = 0;
+  measurementOverlays.splice(0).forEach((overlay) => {
+    scene.remove(overlay);
+    overlay.geometry.dispose();
+    overlay.material.dispose();
+  });
+  measurementLine.visible = false;
+  measurementLabel.visible = false;
+  document.querySelector("#clearMeasurement").hidden = true;
+  if (resetMessage) {
+    document.querySelector("#measurementStatus").textContent =
+      "Click two parallel surfaces to measure their perpendicular distance.";
+  }
 }
 
 function updateOpeningOptions() {
@@ -898,6 +1389,36 @@ document.querySelector("#addObject").addEventListener("click", () => {
   createSolid(source.params, position);
 });
 
+document.querySelector("#deleteObject").addEventListener("click", () => {
+  if (
+    !selectedObject ||
+    objects.length <= 1 ||
+    editorTemporarilyDisabled ||
+    modelConfirmed
+  ) {
+    return;
+  }
+
+  clearMeasurement();
+  clearRouteVisualization();
+  const deletedObject = selectedObject;
+  const deletedIndex = objects.indexOf(deletedObject);
+  for (let index = attachments.length - 1; index >= 0; index -= 1) {
+    const attachment = attachments[index];
+    if (attachment.a === deletedObject || attachment.b === deletedObject) {
+      attachments.splice(index, 1);
+    }
+  }
+  objects.splice(deletedIndex, 1);
+  disposeSolidObject(deletedObject);
+  selectedObject = null;
+  updateAttachmentFaceVisibility();
+  selectObject(objects[Math.min(deletedIndex, objects.length - 1)]);
+  updateAttachmentUI();
+  document.querySelector("#projectStatus").textContent =
+    `Object ${deletedObject.id} deleted.`;
+});
+
 function startJoin() {
   clearRouteVisualization();
   cancelJoin();
@@ -1120,6 +1641,7 @@ function applyJoin() {
   const poses = capturePoses(joinState.movingMembers);
   const overlaps = posesCollide(joinState.movingMembers, poses);
   if (overlaps) return;
+  clearMeasurement();
   const values = {
     rotation: Number(document.querySelector("#joinRotation").value),
     offsetU: Number(document.querySelector("#joinOffsetU").value),
@@ -1179,17 +1701,20 @@ function setEditorDisabled(disabled) {
 function applyWorkflowLocks() {
   const modelLocked = editorTemporarilyDisabled || modelConfirmed;
   document.querySelectorAll(
-    "#controls input, #addObject, #reset, #showAnnotations, #startJoin, " +
+    "#controls input, #addObject, #deleteObject, #reset, #showAnnotations, #startJoin, " +
       "#attachmentSelect, #editAttachment, #detachAttachment, .group-rotation button",
   ).forEach((element) => {
     element.disabled = modelLocked;
   });
   document.querySelectorAll(
     "#runSimulation, #entranceFace, #exitFace, #confirmOpenings, " +
-      ".furniture-grid input, #allowRoll",
+      ".furniture-grid input, #allowRoll, #startManual",
   ).forEach((element) => {
     element.disabled = editorTemporarilyDisabled;
   });
+  if (objects.length <= 1) {
+    document.querySelector("#deleteObject").disabled = true;
+  }
   updateShapeControlState();
 }
 
@@ -1221,6 +1746,7 @@ function editSelectedAttachment() {
 function detachSelectedAttachment() {
   const attachment = selectedAttachment();
   if (!attachment) return;
+  clearMeasurement();
   const index = attachments.indexOf(attachment);
   if (index >= 0) attachments.splice(index, 1);
   updateAttachmentFaceVisibility();
@@ -1238,6 +1764,7 @@ function rotateSelectedGroup(axisName, degrees) {
   if (!selectedObject || joinState) return;
   const members = connectedObjects(selectedObject);
   if (members.length < 2) return;
+  clearMeasurement();
   const axis = {
     x: new THREE.Vector3(1, 0, 0),
     y: new THREE.Vector3(0, 1, 0),
@@ -1293,6 +1820,7 @@ function confirmModel() {
 }
 
 function editModel() {
+  if (manualMode) stopManualChallenge();
   modelConfirmed = false;
   clearRouteVisualization();
   setHallwayTransparency(false);
@@ -1304,6 +1832,7 @@ function editModel() {
   document.querySelector("#simulationActions").hidden = true;
   document.querySelector("#topView").hidden = true;
   document.querySelector("#routeVideoPanel").hidden = true;
+  updateAttachmentFaceVisibility();
   refreshOpeningHighlights();
   document.querySelector("#workflowStatus").textContent =
     "Model editing enabled. Confirm again when the hallway is finished.";
@@ -1322,11 +1851,392 @@ function confirmOpenings() {
     "Step 2: enter the furniture dimensions and run the simulation.";
   document.querySelector("#simulationStatus").textContent =
     "Furniture dimensions use the same units as the hallway model.";
+  updateAttachmentFaceVisibility();
   refreshOpeningHighlights();
+}
+
+function readFurnitureInputs() {
+  return {
+    length: Number(document.querySelector("#furnitureLength").value),
+    width: Number(document.querySelector("#furnitureWidth").value),
+    height: Number(document.querySelector("#furnitureHeight").value),
+  };
+}
+
+function selectedSimulationEnvironment() {
+  const environment = buildEnvironment();
+  const entrance = environment.openings.find(
+    (opening) => opening.id === document.querySelector("#entranceFace").value,
+  );
+  const exit = environment.openings.find(
+    (opening) => opening.id === document.querySelector("#exitFace").value,
+  );
+  return entrance && exit ? { ...environment, entrance, exit } : null;
+}
+
+function startManualChallenge() {
+  const environment = selectedSimulationEnvironment();
+  const furniture = readFurnitureInputs();
+  const manualClearance =
+    Number(document.querySelector("#clearance").value) || 0;
+  measurementMode = false;
+  document.querySelector("#measureSurfaces").classList.remove("is-active");
+  document.querySelector("#measureSurfaces").textContent =
+    "Measure parallel surfaces";
+  if (!environment || Object.values(furniture).some((value) => value <= 0)) {
+    document.querySelector("#simulationStatus").textContent =
+      "Choose valid openings and furniture dimensions first.";
+    return;
+  }
+  const candidates = openingPoseCandidates(
+    environment.entrance,
+    furniture,
+    environment,
+    manualClearance,
+  );
+
+  clearRouteVisualization();
+  simulationEnvironment = environment;
+  simulationFurniture = furniture;
+  manualMode = true;
+  manualWon = false;
+  manualHasEntered = false;
+  const insideCandidate = candidates.length
+    ? candidates.reduce((closest, candidate) => {
+      const candidateDistance = new THREE.Vector3(
+        candidate.x,
+        candidate.y,
+        candidate.z,
+      ).distanceTo(environment.entrance.center);
+      const closestDistance = new THREE.Vector3(
+        closest.x,
+        closest.y,
+        closest.z,
+      ).distanceTo(environment.entrance.center);
+      return candidateDistance < closestDistance ? candidate : closest;
+    })
+    : findManualFallbackPose(environment, furniture, manualClearance);
+  manualStartPose = createOutsideEntrancePose(
+    insideCandidate,
+    furniture,
+    environment,
+    manualClearance,
+  );
+  manualPose = { ...manualStartPose };
+  furnitureMesh.geometry.dispose();
+  furnitureMesh.geometry = new THREE.BoxGeometry(
+    furniture.length,
+    furniture.width,
+    furniture.height,
+  );
+  furnitureMesh.visible = true;
+  document.querySelector("#manualStage").hidden = false;
+  document.querySelector("#runSimulation").disabled = true;
+  document.querySelector("#startManual").disabled = true;
+  const manualBounds = environment.bounds.clone().expandByScalar(
+    Math.max(furniture.length, furniture.width, furniture.height) +
+      manualClearance,
+  );
+  setManualControlBounds(manualBounds);
+  clearManualTrail();
+  updateManualPose(true);
+  document.querySelector("#simulationStatus").textContent =
+    candidates.length
+      ? `Furniture starts outside. Align it with the entrance using ${manualClearance.toFixed(2)} clearance, then move it in.`
+      : "No automatic entrance alignment was found. Rotate the furniture outside and test the opening manually.";
+}
+
+function createOutsideEntrancePose(
+  orientation,
+  furniture,
+  environment,
+  clearance,
+) {
+  const entrance = environment.entrance;
+  const localVertices = furnitureVertices(
+    { ...orientation, x: 0, y: 0, z: 0 },
+    furniture,
+    clearance,
+  );
+  const normalExtent = Math.max(
+    ...localVertices.map((vertex) =>
+      Math.abs(vertex.dot(entrance.normal))),
+  );
+  const stagingGap =
+    Math.max(furniture.length, furniture.width, furniture.height) * 0.45 +
+    clearance +
+    0.2;
+  let distance = normalExtent + stagingGap;
+  let pose;
+
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const center = entrance.center
+      .clone()
+      .addScaledVector(entrance.normal, distance);
+    pose = {
+      ...orientation,
+      x: center.x,
+      y: center.y,
+      z: center.z,
+    };
+    const overlapsRoom = furnitureVertices(
+      pose,
+      furniture,
+      clearance,
+    ).some((vertex) =>
+      environment.volumes.some((volume) => pointInVolume(vertex, volume)));
+    if (!overlapsRoom) return pose;
+    distance += Math.max(0.15, normalExtent * 0.2);
+  }
+  return pose;
+}
+
+function findManualFallbackPose(environment, furniture, clearance) {
+  const opening = environment.entrance;
+  const volume = environment.volumes.find(
+    (candidate) => candidate.object === opening.object,
+  );
+  const roomCenter = volume.origin
+    .clone()
+    .addScaledVector(volume.a, 0.5)
+    .addScaledVector(volume.b, 0.5)
+    .addScaledVector(volume.c, 0.5);
+  const yaws = Array.from(
+    { length: 12 },
+    (_, index) => index * Math.PI / 6,
+  );
+  const pitches = [0, -15, 15, -30, 30].map(THREE.MathUtils.degToRad);
+  for (let step = 1; step <= 12; step += 1) {
+    const center = opening.center.clone().lerp(roomCenter, step / 12);
+    for (const yaw of yaws) {
+      for (const pitch of pitches) {
+        const pose = {
+          x: center.x,
+          y: center.y,
+          z: center.z,
+          yaw,
+          pitch,
+          roll: 0,
+        };
+        if (isPoseValid(pose, furniture, environment, clearance)) return pose;
+      }
+    }
+  }
+  return {
+    x: roomCenter.x,
+    y: roomCenter.y,
+    z: roomCenter.z,
+    yaw: 0,
+    pitch: 0,
+    roll: 0,
+  };
+}
+
+function stopManualChallenge() {
+  manualMode = false;
+  stopManualDrag();
+  manualWon = false;
+  manualHasEntered = false;
+  manualPose = null;
+  manualStartPose = null;
+  furnitureMesh.visible = false;
+  manualTrail.visible = false;
+  document.querySelector("#manualStage").hidden = true;
+  document.querySelector("#runSimulation").disabled = false;
+  document.querySelector("#startManual").disabled = false;
+  controls.enabled = true;
+  renderer.domElement.classList.remove("is-dragging");
+  document.querySelector("#simulationStatus").textContent =
+    "Manual challenge ended. Run the solver or try again.";
+}
+
+function setManualControlBounds(bounds) {
+  const zControl = document.querySelector("#manualZ");
+  zControl.min = String(bounds.min.z);
+  zControl.max = String(bounds.max.z);
+  zControl.value = String(manualPose.z);
+  syncManualControls();
+}
+
+function syncManualControls() {
+  if (!manualPose) return;
+  document.querySelector("#manualZ").value = String(manualPose.z);
+  document.querySelector("#manualZValue").textContent = manualPose.z.toFixed(2);
+  document.querySelector("#manualYaw").value =
+    String(THREE.MathUtils.radToDeg(manualPose.yaw));
+  document.querySelector("#manualPitch").value =
+    String(THREE.MathUtils.radToDeg(manualPose.pitch));
+  document.querySelector("#manualRoll").value =
+    String(THREE.MathUtils.radToDeg(manualPose.roll));
+}
+
+function updateManualPose(recordTrail = false) {
+  if (!manualMode || !manualPose) return;
+  const clearance = Number(document.querySelector("#clearance").value) || 0;
+  const fullyInside = isPoseValid(
+    manualPose,
+    simulationFurniture,
+    simulationEnvironment,
+    clearance,
+  );
+  if (fullyInside) manualHasEntered = true;
+  const valid = isManualPoseValid(manualPose, clearance);
+  setFurniturePose(manualPose, clearance);
+  furnitureMaterial.color.setHex(valid
+    ? (fullyInside ? 0x2eaf68 : 0xe6b83f)
+    : 0xd94d45);
+  syncManualControls();
+  const reachedExit = manualHasEntered && valid && furnitureReachedExit();
+  const status = document.querySelector("#manualStatus");
+  status.className = valid ? "is-valid" : "is-invalid";
+  status.textContent = reachedExit
+    ? "You win! The furniture passed completely through the exit."
+    : manualHasEntered
+      ? "Furniture is inside. Only the entrance and exit can cross the boundary."
+      : valid
+        ? "Entrance phase: align and move the furniture fully inside."
+      : "Collision or outside the hallway. Adjust the pose.";
+  if (reachedExit) {
+    manualWon = true;
+    stopManualDrag();
+  }
+
+  if (valid && recordTrail) {
+    const point = new THREE.Vector3(manualPose.x, manualPose.y, manualPose.z);
+    const previous = manualTrailPoints.at(-1);
+    if (!previous || previous.distanceTo(point) > 0.08) {
+      manualTrailPoints.push(point);
+      manualTrail.geometry.dispose();
+      manualTrail.geometry = new THREE.BufferGeometry().setFromPoints(
+        manualTrailPoints,
+      );
+      manualTrail.visible = manualTrailPoints.length > 1;
+    }
+  }
+}
+
+function tryManualPose(candidate, recordTrail = true) {
+  if (!manualMode || !manualPose || manualWon) return false;
+  const clearance = Number(document.querySelector("#clearance").value) || 0;
+  const currentValid = isManualPoseValid(manualPose, clearance);
+  const openings = manualAllowedOpenings();
+  const validPath = currentValid
+    ? isEdgeValidThroughOpenings(
+      manualPose,
+      candidate,
+      simulationFurniture,
+      simulationEnvironment,
+      clearance,
+      openings,
+      0.04,
+    )
+    : isPoseValidThroughOpenings(
+      candidate,
+      simulationFurniture,
+      simulationEnvironment,
+      clearance,
+      openings,
+    );
+  if (!validPath) {
+    const status = document.querySelector("#manualStatus");
+    status.className = "is-invalid";
+    status.textContent =
+      "Blocked by a wall or room boundary. The furniture stayed at its last valid pose.";
+    syncManualControls();
+    return false;
+  }
+  manualPose = { ...candidate };
+  updateManualPose(recordTrail);
+  return true;
+}
+
+function manualAllowedOpenings() {
+  if (manualHasEntered) {
+    return [simulationEnvironment.entrance, simulationEnvironment.exit];
+  }
+  return [{
+    ...simulationEnvironment.entrance,
+    stagingPadding: Math.max(
+      simulationFurniture.length,
+      simulationFurniture.width,
+      simulationFurniture.height,
+    ),
+  }];
+}
+
+function isManualPoseValid(pose, clearance) {
+  return isPoseValidThroughOpenings(
+    pose,
+    simulationFurniture,
+    simulationEnvironment,
+    clearance,
+    manualAllowedOpenings(),
+  );
+}
+
+function furnitureReachedExit() {
+  const exit = simulationEnvironment.exit;
+  const center = new THREE.Vector3(manualPose.x, manualPose.y, manualPose.z);
+  const offset = center.clone().sub(exit.center);
+  const signedNormalDistance = offset.dot(exit.normal);
+  const uDistance = Math.abs(offset.dot(exit.u));
+  const vDistance = Math.abs(offset.dot(exit.v));
+  const openingVertices = faceQuads[exit.faceIndex].map(
+    (index) => exit.object.vertices[index]
+      .clone()
+      .applyQuaternion(exit.object.root.quaternion)
+      .add(exit.object.root.position),
+  );
+  const uLimit = Math.max(
+    ...openingVertices.map((vertex) =>
+      Math.abs(vertex.clone().sub(exit.center).dot(exit.u))),
+  );
+  const vLimit = Math.max(
+    ...openingVertices.map((vertex) =>
+      Math.abs(vertex.clone().sub(exit.center).dot(exit.v))),
+  );
+  const furnitureOffsets = furnitureVertices(
+    manualPose,
+    simulationFurniture,
+    Number(document.querySelector("#clearance").value) || 0,
+  ).map((vertex) => vertex.sub(center));
+  const normalExtent = Math.max(
+    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.normal))),
+  );
+  const uExtent = Math.max(
+    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.u))),
+  );
+  const vExtent = Math.max(
+    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.v))),
+  );
+  const trailingFaceDistance = signedNormalDistance - normalExtent;
+  const tolerance = 0.03;
+  return (
+    trailingFaceDistance >= -tolerance &&
+    uDistance + uExtent <= uLimit + tolerance &&
+    vDistance + vExtent <= vLimit + tolerance
+  );
+}
+
+function resetManualChallenge() {
+  if (!manualStartPose) return;
+  manualWon = false;
+  manualHasEntered = false;
+  manualPose = { ...manualStartPose };
+  clearManualTrail();
+  updateManualPose(true);
+}
+
+function clearManualTrail() {
+  manualTrailPoints.length = 0;
+  manualTrail.geometry.dispose();
+  manualTrail.geometry = new THREE.BufferGeometry();
+  manualTrail.visible = false;
 }
 
 async function runSimulation() {
   if (joinState || !selectedObject) return;
+  if (manualMode) stopManualChallenge();
   const status = document.querySelector("#simulationStatus");
   const runButton = document.querySelector("#runSimulation");
   const environment = buildEnvironment();
@@ -1341,11 +2251,7 @@ async function runSimulation() {
     return;
   }
 
-  const furniture = {
-    length: Number(document.querySelector("#furnitureLength").value),
-    width: Number(document.querySelector("#furnitureWidth").value),
-    height: Number(document.querySelector("#furnitureHeight").value),
-  };
+  const furniture = readFurnitureInputs();
   if (Object.values(furniture).some((value) => !Number.isFinite(value) || value <= 0)) {
     status.textContent = "Furniture dimensions must be positive.";
     return;
@@ -1357,17 +2263,20 @@ async function runSimulation() {
   runButton.disabled = true;
   status.textContent = "Planning 3D route…";
   const sceneSize = environment.bounds.getSize(new THREE.Vector3());
-  const positionStep = Math.max(0.12, Math.min(sceneSize.x, sceneSize.y, sceneSize.z) / 18);
+  const positionStep = Math.max(
+    0.08,
+    Math.min(sceneSize.x, sceneSize.y, sceneSize.z) / 28,
+  );
   const result = await planRRTConnect({
     environment,
     furniture,
     entrance,
     exit,
     config: {
-      maxIterations: 20000,
+      maxIterations: 50000,
       positionStep,
-      angleStep: THREE.MathUtils.degToRad(5),
-      goalBias: 0.1,
+      angleStep: THREE.MathUtils.degToRad(4),
+      goalBias: 0.18,
       clearance: Number(document.querySelector("#clearance").value) || 0,
       allowRoll: document.querySelector("#allowRoll").checked,
       animationStep: positionStep / 2,
@@ -1447,10 +2356,11 @@ function showRoute(path) {
   rebuildRouteFrames();
 }
 
-function setFurniturePose(pose) {
+function setFurniturePose(pose, clearanceOverride = null) {
   furnitureMesh.position.set(pose.x, pose.y, pose.z);
   furnitureMesh.quaternion.copy(poseQuaternion(pose));
-  const clearance = Number(document.querySelector("#clearance").value) || 0;
+  const clearance = clearanceOverride ??
+    (Number(document.querySelector("#clearance").value) || 0);
   const valid = isPoseValid(
     pose,
     simulationFurniture,
@@ -1579,6 +2489,38 @@ document.querySelectorAll(".group-rotation button").forEach((button) => {
   });
 });
 document.querySelector("#runSimulation").addEventListener("click", runSimulation);
+document.querySelector("#startManual").addEventListener("click", startManualChallenge);
+document.querySelector("#stopManual").addEventListener("click", stopManualChallenge);
+document.querySelector("#resetManual").addEventListener("click", resetManualChallenge);
+document.querySelector("#clearManualTrail").addEventListener("click", clearManualTrail);
+document.querySelector("#measureSurfaces").addEventListener("click", toggleMeasurementMode);
+document.querySelector("#clearMeasurement").addEventListener("click", () => {
+  measurementMode = false;
+  document.querySelector("#measureSurfaces").classList.remove("is-active");
+  document.querySelector("#measureSurfaces").textContent =
+    "Measure parallel surfaces";
+  clearMeasurement();
+});
+document.querySelector("#manualZ").addEventListener("input", (event) => {
+  if (!manualPose) return;
+  tryManualPose({
+    ...manualPose,
+    z: Number(event.target.value),
+  });
+});
+[
+  ["manualYaw", "yaw"],
+  ["manualPitch", "pitch"],
+  ["manualRoll", "roll"],
+].forEach(([id, key]) => {
+  document.querySelector(`#${id}`).addEventListener("input", (event) => {
+    if (!manualPose) return;
+    tryManualPose({
+      ...manualPose,
+      [key]: THREE.MathUtils.degToRad(Number(event.target.value)),
+    });
+  });
+});
 document.querySelector("#playRoute").addEventListener("click", toggleRoutePlayback);
 document.querySelector("#videoPlayRoute").addEventListener("click", toggleRoutePlayback);
 document.querySelector("#showRouteFrames").addEventListener("change", rebuildRouteFrames);
@@ -1606,6 +2548,15 @@ function scrubRoute(event) {
 }
 document.querySelector("#routeScrub").addEventListener("input", scrubRoute);
 document.querySelector("#videoRouteScrub").addEventListener("input", scrubRoute);
+document.querySelector("#saveProject").addEventListener("click", saveProject);
+document.querySelector("#loadProject").addEventListener("click", () => {
+  document.querySelector("#projectFile").click();
+});
+document.querySelector("#projectFile").addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (file) await loadProjectFile(file);
+  event.target.value = "";
+});
 document.querySelector("#entranceFace").addEventListener("change", () => {
   openingPickRole = "exit";
   refreshOpeningHighlights();
@@ -1624,6 +2575,7 @@ const dragPlane = new THREE.Plane();
 const dragOffset = new THREE.Vector3();
 const dragPoint = new THREE.Vector3();
 const lastValidPosition = new THREE.Vector3();
+const manualDragOffset = new THREE.Vector3();
 let draggedObject = null;
 let draggedMembers = [];
 let dragBasePoses = null;
@@ -1699,6 +2651,35 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
   setPointer(event);
+  if (measurementMode) {
+    const hits = raycaster.intersectObjects(
+      objects.map((object) => object.mesh),
+      false,
+    );
+    if (hits.length) {
+      selectMeasurementFace(hits[0]);
+      event.preventDefault();
+    }
+    return;
+  }
+  if (manualMode) {
+    if (manualWon) return;
+    if (!moveKeyHeld) return;
+    const furnitureHit = raycaster.intersectObject(furnitureMesh, false)[0];
+    if (!furnitureHit) return;
+    manualDragging = true;
+    manualDragPointerId = event.pointerId;
+    controls.enabled = false;
+    renderer.domElement.classList.add("is-dragging");
+    renderer.domElement.setPointerCapture(event.pointerId);
+    dragPlane.setFromNormalAndCoplanarPoint(
+      camera.getWorldDirection(new THREE.Vector3()),
+      furnitureHit.point,
+    );
+    manualDragOffset.copy(furnitureHit.point).sub(furnitureMesh.position);
+    event.preventDefault();
+    return;
+  }
   const hits = raycaster.intersectObjects(objects.map((object) => object.mesh), false);
   if (!hits.length) return;
 
@@ -1735,6 +2716,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
   }
 
   draggedObject = hits[0].object.userData.object;
+  clearMeasurement();
   clearRouteVisualization();
   draggedMembers = connectedObjects(draggedObject);
   dragBasePoses = capturePoses(draggedMembers);
@@ -1753,6 +2735,58 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   updateHoveredLabel(event);
+  if (manualDragging && manualPose) {
+    setPointer(event);
+    if (raycaster.ray.intersectPlane(dragPlane, dragPoint)) {
+      const desired = dragPoint.clone().sub(manualDragOffset);
+      const candidate = {
+        ...manualPose,
+        x: desired.x,
+        y: desired.y,
+        z: desired.z,
+      };
+      if (!tryManualPose(candidate)) {
+        let safe = { ...manualPose };
+        let blocked = candidate;
+        const clearance =
+          Number(document.querySelector("#clearance").value) || 0;
+        for (let index = 0; index < 14; index += 1) {
+          const midpoint = {
+            ...manualPose,
+            x: (safe.x + blocked.x) / 2,
+            y: (safe.y + blocked.y) / 2,
+            z: (safe.z + blocked.z) / 2,
+          };
+          if (
+            isEdgeValidThroughOpenings(
+              manualPose,
+              midpoint,
+              simulationFurniture,
+              simulationEnvironment,
+              clearance,
+              manualAllowedOpenings(),
+              0.04,
+            )
+          ) {
+            safe = midpoint;
+          } else {
+            blocked = midpoint;
+          }
+        }
+        if (
+          Math.hypot(
+            safe.x - manualPose.x,
+            safe.y - manualPose.y,
+            safe.z - manualPose.z,
+          ) > 0.002
+        ) {
+          manualPose = safe;
+          updateManualPose(true);
+        }
+      }
+    }
+    return;
+  }
   if (!draggedObject) return;
   setPointer(event);
   if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
@@ -1793,7 +2827,24 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   lastValidPosition.copy(safe);
 });
 
+function stopManualDrag() {
+  manualDragging = false;
+  controls.enabled = true;
+  renderer.domElement.classList.remove("is-dragging");
+  if (
+    manualDragPointerId !== null &&
+    renderer.domElement.hasPointerCapture(manualDragPointerId)
+  ) {
+    renderer.domElement.releasePointerCapture(manualDragPointerId);
+  }
+  manualDragPointerId = null;
+}
+
 function stopObjectDrag(event) {
+  if (manualDragging || manualDragPointerId !== null) {
+    stopManualDrag();
+    return;
+  }
   if (!draggedObject) return;
   draggedObject = null;
   draggedMembers = [];
@@ -1812,6 +2863,27 @@ renderer.domElement.addEventListener("pointerleave", () => {
     hoveredLabel.visible = false;
     hoveredLabel = null;
   }
+});
+
+window.addEventListener("keydown", (event) => {
+  if (event.code !== "KeyM" || event.repeat) return;
+  moveKeyHeld = true;
+  if (manualMode && !manualWon) {
+    document.querySelector("#manualStatus").textContent =
+      "M held: click and drag the furniture to move it.";
+  }
+});
+
+window.addEventListener("keyup", (event) => {
+  if (event.code !== "KeyM") return;
+  moveKeyHeld = false;
+  if (manualDragging) stopManualDrag();
+  if (manualMode && !manualWon) updateManualPose(false);
+});
+
+window.addEventListener("blur", () => {
+  moveKeyHeld = false;
+  stopManualDrag();
 });
 
 document.querySelector("#reset").addEventListener("click", () => {
