@@ -45,6 +45,7 @@ export function createManualModeController({
   let manualMode = false;
   let manualPose = null;
   let manualStartPose = null;
+  let manualEntranceOrientation = null;
   let manualDragging = false;
   let manualDragPointerId = null;
   let manualWon = false;
@@ -82,6 +83,12 @@ export function createManualModeController({
     return manualPose ? { ...manualPose } : null;
   }
 
+  function syncManualStartStatus(clearance) {
+    qs("#simulationStatus").textContent = qs("#manualIgnoreEntrance").checked
+      ? `Furniture starts just outside with ${clearance.toFixed(2)} clearance. Move it through the entrance.`
+      : "Furniture starts inside at the entrance-aligned pose.";
+  }
+
   function manualAllowedOpenings() {
     if (!simulationEnvironment || !simulationFurniture) return [];
     if (manualHasEntered) {
@@ -89,6 +96,7 @@ export function createManualModeController({
     }
     return [{
       ...simulationEnvironment.entrance,
+      unboundedExterior: qs("#manualIgnoreEntrance").checked,
       stagingPadding: Math.max(
         simulationFurniture.length,
         simulationFurniture.width,
@@ -253,7 +261,12 @@ export function createManualModeController({
     return true;
   }
 
-  function createOutsideEntrancePose(orientation, furniture, environment, clearance) {
+  function createOutsideEntrancePose(
+    orientation,
+    furniture,
+    environment,
+    clearance,
+  ) {
     const entrance = environment.entrance;
     const localVertices = furnitureVertices(
       { ...orientation, x: 0, y: 0, z: 0 },
@@ -263,11 +276,7 @@ export function createManualModeController({
     const normalExtent = Math.max(
       ...localVertices.map((vertex) => Math.abs(vertex.dot(entrance.normal))),
     );
-    const stagingGap =
-      Math.max(furniture.length, furniture.width, furniture.height) * 0.45 +
-      clearance +
-      0.2;
-    let distance = normalExtent + stagingGap;
+    let distance = normalExtent + 0.05;
     let pose;
 
     for (let attempt = 0; attempt < 40; attempt += 1) {
@@ -371,12 +380,15 @@ export function createManualModeController({
         return candidateDistance < closestDistance ? candidate : closest;
       })
       : findManualFallbackPose(environment, furniture, manualClearance);
-    manualStartPose = createOutsideEntrancePose(
-      insideCandidate,
-      furniture,
-      environment,
-      manualClearance,
-    );
+    manualEntranceOrientation = { ...insideCandidate };
+    manualStartPose = qs("#manualIgnoreEntrance").checked
+      ? createOutsideEntrancePose(
+        manualEntranceOrientation,
+        furniture,
+        environment,
+        manualClearance,
+      )
+      : { ...manualEntranceOrientation };
     manualPose = { ...manualStartPose };
     furnitureMesh.geometry.dispose();
     furnitureMesh.geometry = new THREE.BoxGeometry(
@@ -398,9 +410,7 @@ export function createManualModeController({
     zControl.value = String(manualPose.z);
     clearManualTrail();
     updateManualPose(true);
-    qs("#simulationStatus").textContent = candidates.length
-      ? `Furniture starts outside. Align it with the entrance using ${manualClearance.toFixed(2)} clearance, then move it in.`
-      : "No automatic entrance alignment was found. Rotate the furniture outside and test the opening manually.";
+    syncManualStartStatus(manualClearance);
     return true;
   }
 
@@ -411,6 +421,7 @@ export function createManualModeController({
     manualHasEntered = false;
     manualPose = null;
     manualStartPose = null;
+    manualEntranceOrientation = null;
     furnitureMesh.visible = false;
     manualTrail.visible = false;
     qs("#manualStage").hidden = true;
@@ -427,6 +438,33 @@ export function createManualModeController({
     if (!manualStartPose) return false;
     manualWon = false;
     manualHasEntered = false;
+    manualPose = { ...manualStartPose };
+    clearManualTrail();
+    updateManualPose(true);
+    syncManualStartStatus(clearance);
+    return true;
+  }
+
+  function updateEntranceOption() {
+    if (
+      !manualMode ||
+      !manualEntranceOrientation ||
+      !simulationFurniture ||
+      !simulationEnvironment
+    ) {
+      return false;
+    }
+    const clearance = Number(qs("#clearance").value) || 0;
+    manualWon = false;
+    manualHasEntered = false;
+    manualStartPose = qs("#manualIgnoreEntrance").checked
+      ? createOutsideEntrancePose(
+        manualEntranceOrientation,
+        simulationFurniture,
+        simulationEnvironment,
+        clearance,
+      )
+      : { ...manualEntranceOrientation };
     manualPose = { ...manualStartPose };
     clearManualTrail();
     updateManualPose(true);
@@ -551,6 +589,7 @@ export function createManualModeController({
     handleKeyDown,
     handleKeyUp,
     handleBlur,
+    updateEntranceOption,
     isActive: () => manualMode,
     isWon: () => manualWon,
   };

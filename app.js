@@ -9,8 +9,8 @@ import {
   openingPoseCandidates,
   pointInVolume,
   poseQuaternion,
-} from "./planner.js";
-import { createManualModeController } from "./manual.js";
+} from "./planner.js?v=20260607-3";
+import { createManualModeController } from "./manual.js?v=20260607-3";
 
 const defaults = {
   aLength: 4,
@@ -2132,10 +2132,6 @@ document.querySelectorAll(".group-rotation button").forEach((button) => {
   });
 });
 document.querySelector("#runSimulation").addEventListener("click", runSimulation);
-document.querySelector("#startManual").addEventListener("click", startManualChallenge);
-document.querySelector("#stopManual").addEventListener("click", stopManualChallenge);
-document.querySelector("#resetManual").addEventListener("click", resetManualChallenge);
-document.querySelector("#clearManualTrail").addEventListener("click", clearManualTrail);
 document.querySelector("#measureSurfaces").addEventListener("click", toggleMeasurementMode);
 document.querySelector("#clearMeasurement").addEventListener("click", () => {
   measurementMode = false;
@@ -2181,6 +2177,9 @@ document.querySelector("#resetManual").addEventListener("click", () => {
 });
 document.querySelector("#clearManualTrail").addEventListener("click", () => {
   manualModeController.clearManualTrail();
+});
+document.querySelector("#manualIgnoreEntrance").addEventListener("change", () => {
+  manualModeController.updateEntranceOption();
 });
 document.querySelector("#playRoute").addEventListener("click", toggleRoutePlayback);
 document.querySelector("#videoPlayRoute").addEventListener("click", toggleRoutePlayback);

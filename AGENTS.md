@@ -95,7 +95,7 @@ Manual traversal uses portal-aware validation from `planner.js`:
 
 When changing manual start placement, verify every clearance-expanded furniture
 vertex is outside all room volumes. The start position is produced by
-`createOutsideEntrancePose()` in `app.js`.
+`createOutsideEntrancePose()` in `manual.js`.
 
 ## Solver Guidance
 
@@ -119,6 +119,8 @@ prove that no route exists.
 - Keep unrelated user changes intact; the working tree may already be dirty.
 - Project JSON changes require careful compatibility handling. Increment
   `PROJECT_VERSION` only when old saved projects cannot be safely interpreted.
+- Local ES module URLs use matching revision query tags in `index.html` and
+  `app.js`. Whenever `app.js`, `manual.js`, or `planner.js` changes, update all
+  local module revision tags together so browsers cannot mix cached versions.
 - Use ASCII in source unless existing UI text requires otherwise.
 - Update AGENTS.md when you make major changes.
-

@@ -226,6 +226,10 @@
               <input id="allowRoll" type="checkbox" />
               Allow roll sampling
             </label>
+            <label class="simulation-check">
+              <input id="manualIgnoreEntrance" type="checkbox" />
+              Manual: ignore entrance edges until fully inside
+            </label>
             <div class="simulation-run-actions">
               <button id="runSimulation" type="button">Use automatic solver</button>
               <button id="startManual" type="button">Try manually</button>
@@ -333,6 +337,6 @@
       <p>Green: clear · Yellow: tight clearance · Red: collision</p>
     </section>
 
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=20260607-3"></script>
   </body>
 </html>

@@ -133,6 +133,9 @@ function pointPassesThroughOpening(point, opening) {
     u: offset.dot(opening.u),
     v: offset.dot(opening.v),
   };
+  if (opening.unboundedExterior && normalDistance >= -1e-5) {
+    return true;
+  }
   if (opening.stagingPadding && normalDistance > 1e-5) {
     return (
       Math.abs(projected.u) <= opening.uLimit + opening.stagingPadding &&
