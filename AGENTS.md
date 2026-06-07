@@ -17,6 +17,7 @@ OrbitControls are loaded from a CDN through the import map in `index.html`.
   manual interaction, animation, and environment construction.
 - `planner.js`: furniture geometry, collision checks, opening traversal, and
   RRT-Connect route planning.
+- `manual.js`：Manual dragging "solver" allowing user to attempt solution themselves.
 
 Keep changes within these ownership boundaries when practical. Geometry and
 motion-planning functions that do not depend on DOM state belong in
