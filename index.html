@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="An interactive Three.js parallelepiped editor."
+    />
+    <title>Parallelepiped Lab</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="viewport" aria-label="Interactive 3D viewport">
+        <div id="scene"></div>
+
+        <header class="brand">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <div>
+            <p class="eyebrow">Geometry workspace</p>
+            <h1>Parallelepiped Lab</h1>
+          </div>
+        </header>
+
+        <div class="view-hint">
+          <span class="mouse-icon" aria-hidden="true"></span>
+          Drag object to move · Drag space to orbit · Scroll to zoom
+        </div>
+
+        <div class="axis-key" aria-label="Axis color key">
+          <span><i class="axis-x"></i>X</span>
+          <span><i class="axis-y"></i>Y</span>
+          <span><i class="axis-z"></i>Z</span>
+        </div>
+      </section>
+
+      <aside class="control-panel">
+        <div class="panel-heading">
+          <p class="eyebrow">Shape parameters</p>
+          <h2>Edge vectors</h2>
+          <p>Define the solid from origin <strong>O</strong> and vectors <strong>A</strong>, <strong>B</strong>, and <strong>C</strong>.</p>
+        </div>
+
+        <form id="controls">
+          <fieldset>
+            <legend>Dimensions</legend>
+            <div class="control" data-control="aLength">
+              <div class="control-label">
+                <label for="aLength">A length</label>
+                <output for="aLength">4.0</output>
+              </div>
+              <div class="input-row">
+                <input id="aLength" type="range" min="1" max="8" step="0.1" value="4" />
+                <input aria-label="A length precise value" class="number-input" type="number" min="1" max="8" step="0.1" value="4" />
+              </div>
+            </div>
+
+            <div class="control" data-control="bLength">
+              <div class="control-label">
+                <label for="bLength">B length</label>
+                <output for="bLength">4.0</output>
+              </div>
+              <div class="input-row">
+                <input id="bLength" type="range" min="1" max="8" step="0.1" value="4" />
+                <input aria-label="B length precise value" class="number-input" type="number" min="1" max="8" step="0.1" value="4" />
+              </div>
+            </div>
+
+            <div class="control" data-control="cLength">
+              <div class="control-label">
+                <label for="cLength">C length</label>
+                <output for="cLength">4.0</output>
+              </div>
+              <div class="input-row">
+                <input id="cLength" type="range" min="1" max="8" step="0.1" value="4" />
+                <input aria-label="C length precise value" class="number-input" type="number" min="1" max="8" step="0.1" value="4" />
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset>
+            <legend>Orientation</legend>
+            <div class="control" data-control="angleAB" data-unit="°">
+              <div class="control-label">
+                <label for="angleAB">Angle between <span class="char-a">A</span> and <span class="char-b">B</span></label>
+                <output for="angleAB">90°</output>
+              </div>
+              <div class="input-row">
+                <input id="angleAB" type="range" min="10" max="170" step="1" value="90" />
+                <input aria-label="Angle between A and B precise value" class="number-input" type="number" min="10" max="170" step="1" value="90" />
+              </div>
+            </div>
+
+            <div class="control" data-control="angleAC" data-unit="°">
+              <div class="control-label">
+                <label for="angleAC">Angle between <span class="char-a">A</span> and <span class="char-c">C</span></label>
+                <output for="angleAC">90°</output>
+              </div>
+              <div class="input-row">
+                <input id="angleAC" type="range" min="10" max="170" step="1" value="90" />
+                <input aria-label="Angle between A and C precise value" class="number-input" type="number" min="10" max="170" step="1" value="90" />
+              </div>
+            </div>
+
+            <div class="control" data-control="angleBC" data-unit="°">
+              <div class="control-label">
+                <label for="angleBC">Angle between <span class="char-b">B</span> and <span class="char-c">C</span></label>
+                <output for="angleBC">90°</output>
+              </div>
+              <div class="input-row">
+                <input id="angleBC" type="range" min="10" max="170" step="1" value="90" />
+                <input aria-label="Angle between B and C precise value" class="number-input" type="number" min="10" max="170" step="1" value="90" />
+              </div>
+            </div>
+            <p id="angleError" class="angle-error" role="status"></p>
+          </fieldset>
+        </form>
+
+        <label class="annotation-toggle" for="showAnnotations">
+          <span>
+            <strong>Always show vector labels</strong>
+            <small>Otherwise, hover an edge to identify it</small>
+          </span>
+          <input id="showAnnotations" type="checkbox" />
+          <i aria-hidden="true"></i>
+        </label>
+
+        <section class="object-tools" aria-label="Object controls">
+          <div>
+            <strong id="selectedObject">Object 1 selected</strong>
+            <small id="objectCount">1 object in scene</small>
+          </div>
+          <button id="addObject" type="button">+ Add object</button>
+        </section>
+
+        <section class="join-tools" aria-label="Surface connection controls">
+          <button id="startJoin" type="button">Connect two objects</button>
+          <div id="joinLegend" class="join-legend" hidden>
+            <span><i class="join-color-1"></i><b id="joinObject1">Object 1</b></span>
+            <span><i class="join-color-2"></i><b id="joinObject2">Object 2</b></span>
+          </div>
+          <p id="joinStatus">Select two objects, then select one face on each.</p>
+        </section>
+
+        <section id="attachmentTools" class="attachment-tools" hidden aria-label="Attachment group controls">
+          <div class="attachment-heading">
+            <div>
+              <strong id="groupStatus">Attached group</strong>
+              <small id="groupCount"></small>
+            </div>
+          </div>
+          <label for="attachmentSelect">Selected object attachment</label>
+          <select id="attachmentSelect"></select>
+          <div class="attachment-actions">
+            <button id="editAttachment" type="button">Edit attachment</button>
+            <button id="detachAttachment" type="button">Detach</button>
+          </div>
+          <div class="group-rotation">
+            <span>Rotate attached group</span>
+            <div><b>X</b><button data-axis="x" data-angle="-15" type="button">−15°</button><button data-axis="x" data-angle="15" type="button">+15°</button></div>
+            <div><b>Y</b><button data-axis="y" data-angle="-15" type="button">−15°</button><button data-axis="y" data-angle="15" type="button">+15°</button></div>
+            <div><b>Z</b><button data-axis="z" data-angle="-15" type="button">−15°</button><button data-axis="z" data-angle="15" type="button">+15°</button></div>
+          </div>
+        </section>
+
+        <section class="workflow-confirm">
+          <button id="confirmModel" type="button">Confirm 3D model</button>
+          <button id="editModel" type="button" hidden>Edit model</button>
+          <p id="workflowStatus">Finish building and attaching the hallway, then confirm it.</p>
+        </section>
+
+        <section class="simulation-tools" aria-label="Furniture fit simulation">
+          <div class="simulation-heading">
+            <p class="eyebrow">Motion planning</p>
+            <h3>Furniture fit</h3>
+          </div>
+          <div id="openingStage" class="simulation-stage" hidden>
+            <span class="stage-number">1</span>
+            <p class="face-pick-hint">Click a surface in the 3D view: entrance first, then exit.</p>
+            <label for="entranceFace">Entrance opening</label>
+            <select id="entranceFace"></select>
+            <label for="exitFace">Exit opening</label>
+            <select id="exitFace"></select>
+            <button id="confirmOpenings" type="button">Confirm entrance &amp; exit</button>
+          </div>
+          <div id="furnitureStage" class="simulation-stage" hidden>
+            <span class="stage-number">2</span>
+            <div class="furniture-grid">
+              <label>Length<input id="furnitureLength" type="number" min="0.1" step="0.1" value="2.5" /></label>
+              <label>Width<input id="furnitureWidth" type="number" min="0.1" step="0.1" value="1.2" /></label>
+              <label>Height<input id="furnitureHeight" type="number" min="0.1" step="0.1" value="1.2" /></label>
+              <label>Clearance<input id="clearance" type="number" min="0" step="0.05" value="0.1" /></label>
+            </div>
+            <label class="simulation-check">
+              <input id="allowRoll" type="checkbox" />
+              Allow roll sampling
+            </label>
+            <button id="runSimulation" type="button">Simulate furniture route</button>
+          </div>
+          <p id="simulationStatus">Choose two exterior openings.</p>
+          <div id="simulationActions" class="simulation-actions" hidden>
+            <button id="playRoute" type="button" disabled>Play route</button>
+            <label><input id="showRouteFrames" type="checkbox" disabled /> Route frames</label>
+            <button id="exportRoute" type="button" disabled>Export JSON</button>
+            <input id="routeScrub" type="range" min="0" max="0" step="1" value="0" disabled aria-label="Route frame" />
+          </div>
+          <div id="topView" class="top-view" hidden aria-label="Top-down route view"></div>
+        </section>
+
+        <section class="vector-readout" aria-label="Calculated vectors">
+          <div>
+            <span class="vector-name vector-a">A</span>
+            <code id="vectorA">(4.00, 0.00, 0.00)</code>
+          </div>
+          <div>
+            <span class="vector-name vector-b">B</span>
+            <code id="vectorB">(0.00, 4.00, 0.00)</code>
+          </div>
+          <div>
+            <span class="vector-name vector-c">C</span>
+            <code id="vectorC">(0.00, 0.00, 4.00)</code>
+          </div>
+        </section>
+
+        <button id="reset" class="secondary-button" type="button">
+          <span aria-hidden="true">↺</span>
+          Reset parameters
+        </button>
+      </aside>
+    </main>
+
+    <section id="joinPanel" class="join-panel" hidden aria-label="Join preview">
+      <div class="join-panel__heading">
+        <div>
+          <p class="eyebrow">Surface connection</p>
+          <h2>Join preview</h2>
+        </div>
+        <button id="cancelJoin" class="icon-button" type="button" aria-label="Cancel join">×</button>
+      </div>
+      <div id="joinPreview" class="join-preview"></div>
+      <p id="joinSummary" class="join-summary"></p>
+      <div class="join-control">
+        <label for="joinRotation">Rotate moving surface</label>
+        <output id="joinRotationValue">0°</output>
+        <input id="joinRotation" type="range" min="-180" max="180" step="1" value="0" />
+      </div>
+      <div class="join-control">
+        <label for="joinOffsetU">Move horizontally</label>
+        <output id="joinOffsetUValue">0.0</output>
+        <input id="joinOffsetU" type="range" min="-8" max="8" step="0.1" value="0" />
+      </div>
+      <div class="join-control">
+        <label for="joinOffsetV">Move vertically</label>
+        <output id="joinOffsetVValue">0.0</output>
+        <input id="joinOffsetV" type="range" min="-8" max="8" step="0.1" value="0" />
+      </div>
+      <p id="joinError" class="join-error" role="status"></p>
+      <div class="join-actions">
+        <button id="discardJoin" class="secondary-button" type="button">Cancel</button>
+        <button id="applyJoin" type="button">Apply connection</button>
+      </div>
+    </section>
+
+    <section id="routeVideoPanel" class="route-video-panel" hidden aria-label="Route animation">
+      <div class="route-video-heading">
+        <div>
+          <p class="eyebrow">Simulation result</p>
+          <h2>Route animation</h2>
+        </div>
+        <button id="closeRouteVideo" class="icon-button" type="button" aria-label="Close route animation">×</button>
+      </div>
+      <div id="routeVideo" class="route-video"></div>
+      <div class="route-video-controls">
+        <button id="videoPlayRoute" type="button">Pause</button>
+        <input id="videoRouteScrub" type="range" min="0" max="0" step="1" value="0" aria-label="Route animation frame" />
+      </div>
+      <p>Green: clear · Yellow: tight clearance · Red: collision</p>
+    </section>
+
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>
