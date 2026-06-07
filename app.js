@@ -1,16 +1,16 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
+  planRRTConnect,
   furnitureVertices,
-  isEdgeValid,
   isEdgeValidThroughOpenings,
   isPoseValid,
   isPoseValidThroughOpenings,
   openingPoseCandidates,
-  planRRTConnect,
   pointInVolume,
   poseQuaternion,
 } from "./planner.js";
+import { createManualModeController } from "./manual.js";
 
 const defaults = {
   aLength: 4,
@@ -133,15 +133,6 @@ let modelConfirmed = false;
 let editorTemporarilyDisabled = false;
 let openingPickRole = "entrance";
 let openingHighlights = [];
-let manualMode = false;
-let manualPose = null;
-let manualStartPose = null;
-let manualDragging = false;
-let manualDragPointerId = null;
-let manualWon = false;
-let manualHasEntered = false;
-let moveKeyHeld = false;
-const manualTrailPoints = [];
 let measurementMode = false;
 const measuredFaces = [];
 const measurementOverlays = [];
@@ -172,18 +163,6 @@ routeLine.renderOrder = 9;
 scene.add(routeLine);
 const routeFrames = new THREE.Group();
 scene.add(routeFrames);
-const manualTrail = new THREE.Line(
-  new THREE.BufferGeometry(),
-  new THREE.LineBasicMaterial({
-    color: 0x9b59b6,
-    depthTest: false,
-    transparent: true,
-    opacity: 0.9,
-  }),
-);
-manualTrail.renderOrder = 10;
-manualTrail.visible = false;
-scene.add(manualTrail);
 const measurementLine = new THREE.Line(
   new THREE.BufferGeometry(),
   new THREE.LineBasicMaterial({
@@ -198,6 +177,30 @@ const measurementLabel = createLabel("", "#9a7414");
 measurementLabel.visible = false;
 measurementLabel.renderOrder = 12;
 scene.add(measurementLabel);
+
+const manualModeController = createManualModeController({
+  scene,
+  camera,
+  controls,
+  renderer,
+  furnitureMesh,
+  furnitureMaterial,
+  clearRouteVisualization,
+  selectedSimulationEnvironment,
+  readFurnitureInputs,
+  setSimulationContext: (environment, furniture) => {
+    simulationEnvironment = environment;
+    simulationFurniture = furniture;
+  },
+  setFurniturePose,
+  faceQuads,
+  openingPoseCandidates,
+  furnitureVertices,
+  isEdgeValidThroughOpenings,
+  isPoseValid,
+  isPoseValidThroughOpenings,
+  pointInVolume,
+});
 
 function createSolid(params = defaults, position = new THREE.Vector3()) {
   const root = new THREE.Group();
@@ -392,7 +395,7 @@ function disposeSolidObject(object) {
 }
 
 function clearProjectScene() {
-  if (manualMode) stopManualChallenge();
+  if (manualModeController.isActive()) manualModeController.stopManualChallenge();
   clearMeasurement();
   clearRouteVisualization();
   cancelJoin();
@@ -1031,7 +1034,7 @@ function outwardFaceFrame(object, faceIndex) {
 }
 
 function toggleMeasurementMode() {
-  if (joinState || manualMode) return;
+  if (joinState || manualModeController.isActive()) return;
   measurementMode = !measurementMode;
   if (measurementMode) clearMeasurement(false);
   const button = document.querySelector("#measureSurfaces");
@@ -1820,7 +1823,7 @@ function confirmModel() {
 }
 
 function editModel() {
-  if (manualMode) stopManualChallenge();
+  if (manualModeController.isActive()) manualModeController.stopManualChallenge();
   modelConfirmed = false;
   clearRouteVisualization();
   setHallwayTransparency(false);
@@ -1874,369 +1877,9 @@ function selectedSimulationEnvironment() {
   return entrance && exit ? { ...environment, entrance, exit } : null;
 }
 
-function startManualChallenge() {
-  const environment = selectedSimulationEnvironment();
-  const furniture = readFurnitureInputs();
-  const manualClearance =
-    Number(document.querySelector("#clearance").value) || 0;
-  measurementMode = false;
-  document.querySelector("#measureSurfaces").classList.remove("is-active");
-  document.querySelector("#measureSurfaces").textContent =
-    "Measure parallel surfaces";
-  if (!environment || Object.values(furniture).some((value) => value <= 0)) {
-    document.querySelector("#simulationStatus").textContent =
-      "Choose valid openings and furniture dimensions first.";
-    return;
-  }
-  const candidates = openingPoseCandidates(
-    environment.entrance,
-    furniture,
-    environment,
-    manualClearance,
-  );
-
-  clearRouteVisualization();
-  simulationEnvironment = environment;
-  simulationFurniture = furniture;
-  manualMode = true;
-  manualWon = false;
-  manualHasEntered = false;
-  const insideCandidate = candidates.length
-    ? candidates.reduce((closest, candidate) => {
-      const candidateDistance = new THREE.Vector3(
-        candidate.x,
-        candidate.y,
-        candidate.z,
-      ).distanceTo(environment.entrance.center);
-      const closestDistance = new THREE.Vector3(
-        closest.x,
-        closest.y,
-        closest.z,
-      ).distanceTo(environment.entrance.center);
-      return candidateDistance < closestDistance ? candidate : closest;
-    })
-    : findManualFallbackPose(environment, furniture, manualClearance);
-  manualStartPose = createOutsideEntrancePose(
-    insideCandidate,
-    furniture,
-    environment,
-    manualClearance,
-  );
-  manualPose = { ...manualStartPose };
-  furnitureMesh.geometry.dispose();
-  furnitureMesh.geometry = new THREE.BoxGeometry(
-    furniture.length,
-    furniture.width,
-    furniture.height,
-  );
-  furnitureMesh.visible = true;
-  document.querySelector("#manualStage").hidden = false;
-  document.querySelector("#runSimulation").disabled = true;
-  document.querySelector("#startManual").disabled = true;
-  const manualBounds = environment.bounds.clone().expandByScalar(
-    Math.max(furniture.length, furniture.width, furniture.height) +
-      manualClearance,
-  );
-  setManualControlBounds(manualBounds);
-  clearManualTrail();
-  updateManualPose(true);
-  document.querySelector("#simulationStatus").textContent =
-    candidates.length
-      ? `Furniture starts outside. Align it with the entrance using ${manualClearance.toFixed(2)} clearance, then move it in.`
-      : "No automatic entrance alignment was found. Rotate the furniture outside and test the opening manually.";
-}
-
-function createOutsideEntrancePose(
-  orientation,
-  furniture,
-  environment,
-  clearance,
-) {
-  const entrance = environment.entrance;
-  const localVertices = furnitureVertices(
-    { ...orientation, x: 0, y: 0, z: 0 },
-    furniture,
-    clearance,
-  );
-  const normalExtent = Math.max(
-    ...localVertices.map((vertex) =>
-      Math.abs(vertex.dot(entrance.normal))),
-  );
-  const stagingGap =
-    Math.max(furniture.length, furniture.width, furniture.height) * 0.45 +
-    clearance +
-    0.2;
-  let distance = normalExtent + stagingGap;
-  let pose;
-
-  for (let attempt = 0; attempt < 40; attempt += 1) {
-    const center = entrance.center
-      .clone()
-      .addScaledVector(entrance.normal, distance);
-    pose = {
-      ...orientation,
-      x: center.x,
-      y: center.y,
-      z: center.z,
-    };
-    const overlapsRoom = furnitureVertices(
-      pose,
-      furniture,
-      clearance,
-    ).some((vertex) =>
-      environment.volumes.some((volume) => pointInVolume(vertex, volume)));
-    if (!overlapsRoom) return pose;
-    distance += Math.max(0.15, normalExtent * 0.2);
-  }
-  return pose;
-}
-
-function findManualFallbackPose(environment, furniture, clearance) {
-  const opening = environment.entrance;
-  const volume = environment.volumes.find(
-    (candidate) => candidate.object === opening.object,
-  );
-  const roomCenter = volume.origin
-    .clone()
-    .addScaledVector(volume.a, 0.5)
-    .addScaledVector(volume.b, 0.5)
-    .addScaledVector(volume.c, 0.5);
-  const yaws = Array.from(
-    { length: 12 },
-    (_, index) => index * Math.PI / 6,
-  );
-  const pitches = [0, -15, 15, -30, 30].map(THREE.MathUtils.degToRad);
-  for (let step = 1; step <= 12; step += 1) {
-    const center = opening.center.clone().lerp(roomCenter, step / 12);
-    for (const yaw of yaws) {
-      for (const pitch of pitches) {
-        const pose = {
-          x: center.x,
-          y: center.y,
-          z: center.z,
-          yaw,
-          pitch,
-          roll: 0,
-        };
-        if (isPoseValid(pose, furniture, environment, clearance)) return pose;
-      }
-    }
-  }
-  return {
-    x: roomCenter.x,
-    y: roomCenter.y,
-    z: roomCenter.z,
-    yaw: 0,
-    pitch: 0,
-    roll: 0,
-  };
-}
-
-function stopManualChallenge() {
-  manualMode = false;
-  stopManualDrag();
-  manualWon = false;
-  manualHasEntered = false;
-  manualPose = null;
-  manualStartPose = null;
-  furnitureMesh.visible = false;
-  manualTrail.visible = false;
-  document.querySelector("#manualStage").hidden = true;
-  document.querySelector("#runSimulation").disabled = false;
-  document.querySelector("#startManual").disabled = false;
-  controls.enabled = true;
-  renderer.domElement.classList.remove("is-dragging");
-  document.querySelector("#simulationStatus").textContent =
-    "Manual challenge ended. Run the solver or try again.";
-}
-
-function setManualControlBounds(bounds) {
-  const zControl = document.querySelector("#manualZ");
-  zControl.min = String(bounds.min.z);
-  zControl.max = String(bounds.max.z);
-  zControl.value = String(manualPose.z);
-  syncManualControls();
-}
-
-function syncManualControls() {
-  if (!manualPose) return;
-  document.querySelector("#manualZ").value = String(manualPose.z);
-  document.querySelector("#manualZValue").textContent = manualPose.z.toFixed(2);
-  document.querySelector("#manualYaw").value =
-    String(THREE.MathUtils.radToDeg(manualPose.yaw));
-  document.querySelector("#manualPitch").value =
-    String(THREE.MathUtils.radToDeg(manualPose.pitch));
-  document.querySelector("#manualRoll").value =
-    String(THREE.MathUtils.radToDeg(manualPose.roll));
-}
-
-function updateManualPose(recordTrail = false) {
-  if (!manualMode || !manualPose) return;
-  const clearance = Number(document.querySelector("#clearance").value) || 0;
-  const fullyInside = isPoseValid(
-    manualPose,
-    simulationFurniture,
-    simulationEnvironment,
-    clearance,
-  );
-  if (fullyInside) manualHasEntered = true;
-  const valid = isManualPoseValid(manualPose, clearance);
-  setFurniturePose(manualPose, clearance);
-  furnitureMaterial.color.setHex(valid
-    ? (fullyInside ? 0x2eaf68 : 0xe6b83f)
-    : 0xd94d45);
-  syncManualControls();
-  const reachedExit = manualHasEntered && valid && furnitureReachedExit();
-  const status = document.querySelector("#manualStatus");
-  status.className = valid ? "is-valid" : "is-invalid";
-  status.textContent = reachedExit
-    ? "You win! The furniture passed completely through the exit."
-    : manualHasEntered
-      ? "Furniture is inside. Only the entrance and exit can cross the boundary."
-      : valid
-        ? "Entrance phase: align and move the furniture fully inside."
-      : "Collision or outside the hallway. Adjust the pose.";
-  if (reachedExit) {
-    manualWon = true;
-    stopManualDrag();
-  }
-
-  if (valid && recordTrail) {
-    const point = new THREE.Vector3(manualPose.x, manualPose.y, manualPose.z);
-    const previous = manualTrailPoints.at(-1);
-    if (!previous || previous.distanceTo(point) > 0.08) {
-      manualTrailPoints.push(point);
-      manualTrail.geometry.dispose();
-      manualTrail.geometry = new THREE.BufferGeometry().setFromPoints(
-        manualTrailPoints,
-      );
-      manualTrail.visible = manualTrailPoints.length > 1;
-    }
-  }
-}
-
-function tryManualPose(candidate, recordTrail = true) {
-  if (!manualMode || !manualPose || manualWon) return false;
-  const clearance = Number(document.querySelector("#clearance").value) || 0;
-  const currentValid = isManualPoseValid(manualPose, clearance);
-  const openings = manualAllowedOpenings();
-  const validPath = currentValid
-    ? isEdgeValidThroughOpenings(
-      manualPose,
-      candidate,
-      simulationFurniture,
-      simulationEnvironment,
-      clearance,
-      openings,
-      0.04,
-    )
-    : isPoseValidThroughOpenings(
-      candidate,
-      simulationFurniture,
-      simulationEnvironment,
-      clearance,
-      openings,
-    );
-  if (!validPath) {
-    const status = document.querySelector("#manualStatus");
-    status.className = "is-invalid";
-    status.textContent =
-      "Blocked by a wall or room boundary. The furniture stayed at its last valid pose.";
-    syncManualControls();
-    return false;
-  }
-  manualPose = { ...candidate };
-  updateManualPose(recordTrail);
-  return true;
-}
-
-function manualAllowedOpenings() {
-  if (manualHasEntered) {
-    return [simulationEnvironment.entrance, simulationEnvironment.exit];
-  }
-  return [{
-    ...simulationEnvironment.entrance,
-    stagingPadding: Math.max(
-      simulationFurniture.length,
-      simulationFurniture.width,
-      simulationFurniture.height,
-    ),
-  }];
-}
-
-function isManualPoseValid(pose, clearance) {
-  return isPoseValidThroughOpenings(
-    pose,
-    simulationFurniture,
-    simulationEnvironment,
-    clearance,
-    manualAllowedOpenings(),
-  );
-}
-
-function furnitureReachedExit() {
-  const exit = simulationEnvironment.exit;
-  const center = new THREE.Vector3(manualPose.x, manualPose.y, manualPose.z);
-  const offset = center.clone().sub(exit.center);
-  const signedNormalDistance = offset.dot(exit.normal);
-  const uDistance = Math.abs(offset.dot(exit.u));
-  const vDistance = Math.abs(offset.dot(exit.v));
-  const openingVertices = faceQuads[exit.faceIndex].map(
-    (index) => exit.object.vertices[index]
-      .clone()
-      .applyQuaternion(exit.object.root.quaternion)
-      .add(exit.object.root.position),
-  );
-  const uLimit = Math.max(
-    ...openingVertices.map((vertex) =>
-      Math.abs(vertex.clone().sub(exit.center).dot(exit.u))),
-  );
-  const vLimit = Math.max(
-    ...openingVertices.map((vertex) =>
-      Math.abs(vertex.clone().sub(exit.center).dot(exit.v))),
-  );
-  const furnitureOffsets = furnitureVertices(
-    manualPose,
-    simulationFurniture,
-    Number(document.querySelector("#clearance").value) || 0,
-  ).map((vertex) => vertex.sub(center));
-  const normalExtent = Math.max(
-    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.normal))),
-  );
-  const uExtent = Math.max(
-    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.u))),
-  );
-  const vExtent = Math.max(
-    ...furnitureOffsets.map((vertex) => Math.abs(vertex.dot(exit.v))),
-  );
-  const trailingFaceDistance = signedNormalDistance - normalExtent;
-  const tolerance = 0.03;
-  return (
-    trailingFaceDistance >= -tolerance &&
-    uDistance + uExtent <= uLimit + tolerance &&
-    vDistance + vExtent <= vLimit + tolerance
-  );
-}
-
-function resetManualChallenge() {
-  if (!manualStartPose) return;
-  manualWon = false;
-  manualHasEntered = false;
-  manualPose = { ...manualStartPose };
-  clearManualTrail();
-  updateManualPose(true);
-}
-
-function clearManualTrail() {
-  manualTrailPoints.length = 0;
-  manualTrail.geometry.dispose();
-  manualTrail.geometry = new THREE.BufferGeometry();
-  manualTrail.visible = false;
-}
-
 async function runSimulation() {
   if (joinState || !selectedObject) return;
-  if (manualMode) stopManualChallenge();
+  if (manualModeController.isActive()) manualModeController.stopManualChallenge();
   const status = document.querySelector("#simulationStatus");
   const runButton = document.querySelector("#runSimulation");
   const environment = buildEnvironment();
@@ -2502,8 +2145,9 @@ document.querySelector("#clearMeasurement").addEventListener("click", () => {
   clearMeasurement();
 });
 document.querySelector("#manualZ").addEventListener("input", (event) => {
+  const manualPose = manualModeController.getPose();
   if (!manualPose) return;
-  tryManualPose({
+  manualModeController.tryManualPose({
     ...manualPose,
     z: Number(event.target.value),
   });
@@ -2514,12 +2158,29 @@ document.querySelector("#manualZ").addEventListener("input", (event) => {
   ["manualRoll", "roll"],
 ].forEach(([id, key]) => {
   document.querySelector(`#${id}`).addEventListener("input", (event) => {
+    const manualPose = manualModeController.getPose();
     if (!manualPose) return;
-    tryManualPose({
+    manualModeController.tryManualPose({
       ...manualPose,
       [key]: THREE.MathUtils.degToRad(Number(event.target.value)),
     });
   });
+});
+document.querySelector("#startManual").addEventListener("click", () => {
+  measurementMode = false;
+  document.querySelector("#measureSurfaces").classList.remove("is-active");
+  document.querySelector("#measureSurfaces").textContent =
+    "Measure parallel surfaces";
+  manualModeController.startManualChallenge();
+});
+document.querySelector("#stopManual").addEventListener("click", () => {
+  manualModeController.stopManualChallenge();
+});
+document.querySelector("#resetManual").addEventListener("click", () => {
+  manualModeController.resetManualChallenge();
+});
+document.querySelector("#clearManualTrail").addEventListener("click", () => {
+  manualModeController.clearManualTrail();
 });
 document.querySelector("#playRoute").addEventListener("click", toggleRoutePlayback);
 document.querySelector("#videoPlayRoute").addEventListener("click", toggleRoutePlayback);
@@ -2575,7 +2236,6 @@ const dragPlane = new THREE.Plane();
 const dragOffset = new THREE.Vector3();
 const dragPoint = new THREE.Vector3();
 const lastValidPosition = new THREE.Vector3();
-const manualDragOffset = new THREE.Vector3();
 let draggedObject = null;
 let draggedMembers = [];
 let dragBasePoses = null;
@@ -2650,6 +2310,7 @@ function distanceToSegment(px, py, x1, y1, x2, y2) {
 
 renderer.domElement.addEventListener("pointerdown", (event) => {
   if (event.button !== 0) return;
+  if (manualModeController.handlePointerDown(event)) return;
   setPointer(event);
   if (measurementMode) {
     const hits = raycaster.intersectObjects(
@@ -2660,24 +2321,6 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
       selectMeasurementFace(hits[0]);
       event.preventDefault();
     }
-    return;
-  }
-  if (manualMode) {
-    if (manualWon) return;
-    if (!moveKeyHeld) return;
-    const furnitureHit = raycaster.intersectObject(furnitureMesh, false)[0];
-    if (!furnitureHit) return;
-    manualDragging = true;
-    manualDragPointerId = event.pointerId;
-    controls.enabled = false;
-    renderer.domElement.classList.add("is-dragging");
-    renderer.domElement.setPointerCapture(event.pointerId);
-    dragPlane.setFromNormalAndCoplanarPoint(
-      camera.getWorldDirection(new THREE.Vector3()),
-      furnitureHit.point,
-    );
-    manualDragOffset.copy(furnitureHit.point).sub(furnitureMesh.position);
-    event.preventDefault();
     return;
   }
   const hits = raycaster.intersectObjects(objects.map((object) => object.mesh), false);
@@ -2735,58 +2378,7 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
 
 renderer.domElement.addEventListener("pointermove", (event) => {
   updateHoveredLabel(event);
-  if (manualDragging && manualPose) {
-    setPointer(event);
-    if (raycaster.ray.intersectPlane(dragPlane, dragPoint)) {
-      const desired = dragPoint.clone().sub(manualDragOffset);
-      const candidate = {
-        ...manualPose,
-        x: desired.x,
-        y: desired.y,
-        z: desired.z,
-      };
-      if (!tryManualPose(candidate)) {
-        let safe = { ...manualPose };
-        let blocked = candidate;
-        const clearance =
-          Number(document.querySelector("#clearance").value) || 0;
-        for (let index = 0; index < 14; index += 1) {
-          const midpoint = {
-            ...manualPose,
-            x: (safe.x + blocked.x) / 2,
-            y: (safe.y + blocked.y) / 2,
-            z: (safe.z + blocked.z) / 2,
-          };
-          if (
-            isEdgeValidThroughOpenings(
-              manualPose,
-              midpoint,
-              simulationFurniture,
-              simulationEnvironment,
-              clearance,
-              manualAllowedOpenings(),
-              0.04,
-            )
-          ) {
-            safe = midpoint;
-          } else {
-            blocked = midpoint;
-          }
-        }
-        if (
-          Math.hypot(
-            safe.x - manualPose.x,
-            safe.y - manualPose.y,
-            safe.z - manualPose.z,
-          ) > 0.002
-        ) {
-          manualPose = safe;
-          updateManualPose(true);
-        }
-      }
-    }
-    return;
-  }
+  if (manualModeController.handlePointerMove(event)) return;
   if (!draggedObject) return;
   setPointer(event);
   if (!raycaster.ray.intersectPlane(dragPlane, dragPoint)) return;
@@ -2827,24 +2419,8 @@ renderer.domElement.addEventListener("pointermove", (event) => {
   lastValidPosition.copy(safe);
 });
 
-function stopManualDrag() {
-  manualDragging = false;
-  controls.enabled = true;
-  renderer.domElement.classList.remove("is-dragging");
-  if (
-    manualDragPointerId !== null &&
-    renderer.domElement.hasPointerCapture(manualDragPointerId)
-  ) {
-    renderer.domElement.releasePointerCapture(manualDragPointerId);
-  }
-  manualDragPointerId = null;
-}
-
 function stopObjectDrag(event) {
-  if (manualDragging || manualDragPointerId !== null) {
-    stopManualDrag();
-    return;
-  }
+  if (manualModeController.handlePointerUp(event)) return;
   if (!draggedObject) return;
   draggedObject = null;
   draggedMembers = [];
@@ -2866,24 +2442,15 @@ renderer.domElement.addEventListener("pointerleave", () => {
 });
 
 window.addEventListener("keydown", (event) => {
-  if (event.code !== "KeyM" || event.repeat) return;
-  moveKeyHeld = true;
-  if (manualMode && !manualWon) {
-    document.querySelector("#manualStatus").textContent =
-      "M held: click and drag the furniture to move it.";
-  }
+  if (manualModeController.handleKeyDown(event)) return;
 });
 
 window.addEventListener("keyup", (event) => {
-  if (event.code !== "KeyM") return;
-  moveKeyHeld = false;
-  if (manualDragging) stopManualDrag();
-  if (manualMode && !manualWon) updateManualPose(false);
+  if (manualModeController.handleKeyUp(event)) return;
 });
 
 window.addEventListener("blur", () => {
-  moveKeyHeld = false;
-  stopManualDrag();
+  manualModeController.handleBlur();
 });
 
 document.querySelector("#reset").addEventListener("click", () => {
