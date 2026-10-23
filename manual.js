@@ -20,6 +20,7 @@ export function createManualModeController({
   isPoseValid,
   isPoseValidThroughOpenings,
   pointInVolume,
+  onWin,
 }) {
   const manualTrailPoints = [];
   const manualTrail = new THREE.Line(
@@ -330,8 +331,10 @@ export function createManualModeController({
       valid,
     );
     if (reachedExit) {
+      const firstWin = !manualWon;
       manualWon = true;
       stopManualDrag();
+      if (firstWin) onWin?.();
     }
 
     if (valid && recordTrail) {

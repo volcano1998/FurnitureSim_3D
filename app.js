@@ -10,8 +10,8 @@ import {
   openingPoseCandidates,
   pointInVolume,
   poseQuaternion,
-} from "./planner.js?v=20260607-19";
-import { createManualModeController } from "./manual.js?v=20260607-19";
+} from "./planner.js?v=20260607-22";
+import { createManualModeController } from "./manual.js?v=20260607-22";
 
 const defaults = {
   aLength: 4,
@@ -74,7 +74,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0xeef1ec);
 
 const camera = new THREE.PerspectiveCamera(34, 1, 0.1, 150);
-camera.position.set(9, -11, 8);
+camera.position.set(14, -17, 12);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 3));
@@ -110,7 +110,7 @@ routeVideoControls.enableDamping = true;
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.06;
-controls.target.set(1.7, 1.4, 1.5);
+controls.target.set(3.2, 1.4, 1.5);
 controls.minDistance = 6;
 controls.maxDistance = 70;
 
@@ -141,6 +141,7 @@ let openingPickRole = "entrance";
 let openingPickArmed = false;
 let openingSignature = "";
 let openingSignatureTime = 0;
+let guideTime = 0;
 let openingHighlights = [];
 let measurementMode = false;
 const measuredFaces = [];
@@ -181,7 +182,8 @@ let furniturePreviewKey = "";
 
 function updateFurniturePreview() {
   const manualActive = manualModeController.isActive();
-  furniturePreview.visible = !furnitureMesh.visible && !manualActive;
+  furniturePreview.visible =
+    guideStep === 3 && !furnitureMesh.visible && !manualActive;
   if (!furniturePreview.visible) return;
   const { length, width, height } = readFurnitureInputs();
   if (!(length > 0 && width > 0 && height > 0)) {
@@ -256,6 +258,15 @@ const manualModeController = createManualModeController({
   isPoseValid,
   isPoseValidThroughOpenings,
   pointInVolume,
+  onWin: () => showResultDialog({
+    kind: "success",
+    title: "You made it!",
+    text: "The furniture passed completely through the exit.",
+    actions: [
+      { label: "Keep looking", primary: true },
+      { label: "Edit room", go: 1 },
+    ],
+  }),
 });
 
 function createSolid(params = defaults, position = new THREE.Vector3()) {
@@ -1348,6 +1359,7 @@ function pickOpeningFromSurface(hit) {
 
 function setOpeningPickArmed(armed) {
   openingPickArmed = armed;
+  if (armed) forcedStep = null;
   const button = document.querySelector("#pickOpenings");
   button.textContent = armed
     ? "Click entrance, then exit (click to stop)"
@@ -1382,6 +1394,139 @@ function refreshOpeningsWhileEditing(now) {
   if (signature === openingSignature) return;
   openingSignature = signature;
   updateOpeningOptions();
+}
+
+const GUIDE_STEPS = [
+  { card: ["card1"] },
+  { card: ["card2"] },
+  { card: ["card3", "card4"] },
+  { card: ["card4"] },
+];
+let guideStep = 0;
+let forcedStep = null;
+
+function showResultDialog({ kind, title, text, actions }) {
+  const dialog = document.querySelector("#resultDialog");
+  dialog.dataset.kind = kind;
+  document.querySelector("#resultIcon").textContent = kind === "success" ? "✓" : "✕";
+  document.querySelector("#resultTitle").textContent = title;
+  document.querySelector("#resultText").textContent = text;
+  const box = document.querySelector("#resultActions");
+  box.replaceChildren();
+  actions.forEach((action) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = action.label;
+    if (!action.primary) button.classList.add("ghost");
+    button.addEventListener("click", () => {
+      closeResultDialog();
+      if (action.go) goToStep(action.go);
+    });
+    box.appendChild(button);
+  });
+  dialog.hidden = false;
+  box.querySelector("button")?.focus();
+}
+
+function closeResultDialog() {
+  document.querySelector("#resultDialog").hidden = true;
+}
+
+function goToStep(step) {
+  closeResultDialog();
+  if (manualModeController.isActive()) manualModeController.stopManualChallenge();
+  if (step <= 2) {
+    if (modelConfirmed) editModel();
+    forcedStep = step;
+  } else if (!modelConfirmed) {
+    document.querySelector("#workflowStatus").textContent =
+      "Choose the entrance and exit, then confirm the 3D model to continue.";
+    forcedStep = 2;
+    step = 2;
+  } else {
+    forcedStep = null;
+    if (step === 3) clearRouteVisualization();
+  }
+  guideStep = 0;
+  updateGuide();
+  const open = step === 4 ? ["card4"] : step === 3 ? ["card3", "card4"] : [`card${step}`];
+  ["card1", "card2", "card3", "card4"].forEach((id) => {
+    document.querySelector(`#${id}`).open = open.includes(id);
+  });
+  const panel = document.querySelector(".control-panel");
+  const target = document.querySelector(`#card${Math.min(step, 4)}`);
+  panel.scrollTo({ top: Math.max(0, target.offsetTop - 190), behavior: "smooth" });
+}
+
+function currentGuide() {
+  const entrance = document.querySelector("#entranceFace").value;
+  const exit = document.querySelector("#exitFace").value;
+  const hasOpenings = Boolean(entrance && exit && entrance !== exit);
+  if (manualModeController.isActive()) {
+    return {
+      step: 4,
+      title: "Manual attempt",
+      text: "Hold M and drag the furniture through the entrance. Use the sliders for height and rotation. Reach the exit to win.",
+    };
+  }
+  if (joinState) {
+    return {
+      step: 1,
+      title: "Connect two objects",
+      text: "Click one face on each object, then fine-tune the join in the preview panel and apply it.",
+    };
+  }
+  if (!modelConfirmed) {
+    if (forcedStep === 2 || (forcedStep !== 1 && (openingPickArmed || entrance || exit))) {
+      return hasOpenings
+        ? {
+          step: 2,
+          title: "Openings chosen",
+          text: "Green is the entrance and orange is the exit. Press “Confirm 3D model” in step 2 to lock the room.",
+        }
+        : {
+          step: 2,
+          title: "Pick the entrance and exit",
+          text: "Click an outside surface for the entrance first, then another for the exit. You can also use the dropdowns.",
+        };
+    }
+    return {
+      step: 1,
+      title: "Build your room",
+      text: "Drag a block to move it, drag empty space to orbit. Change sizes in the panel, add blocks and connect them. Then choose the entrance and exit in step 2.",
+    };
+  }
+  if (simulationResult?.path?.length) {
+    return {
+      step: 4,
+      title: "Route ready",
+      text: "Press Play route or drag the timeline to watch the furniture move. Colors show clearance: green is clear, red is a collision.",
+    };
+  }
+  return {
+    step: 3,
+    title: "Set the furniture size",
+    text: "The green box is your furniture. Enter its length, width and height, then run the solver or try it manually in step 4.",
+  };
+}
+
+function updateGuide() {
+  const guide = currentGuide();
+  document.querySelector("#guideStep").textContent = guide.step;
+  document.querySelector("#guideTitle").textContent = guide.title;
+  document.querySelector("#guideText").textContent = guide.text;
+  document.querySelectorAll("#stepper li").forEach((item) => {
+    const step = Number(item.dataset.step);
+    item.classList.toggle("active", step === guide.step);
+    item.classList.toggle("done", step < guide.step);
+  });
+  if (guide.step !== guideStep) {
+    guideStep = guide.step;
+    const open = GUIDE_STEPS[guide.step - 1].card;
+    ["card1", "card2", "card3", "card4"].forEach((id) => {
+      document.querySelector(`#${id}`).open = open.includes(id);
+    });
+  }
 }
 
 function viewFurniture() {
@@ -1894,7 +2039,7 @@ function applyWorkflowLocks() {
     element.disabled = modelLocked;
   });
   document.querySelectorAll(
-    "#furnitureStage input, #furnitureStage select, #viewFurniture",
+    "#furnitureStage input, #furnitureStage select, .furniture-dims input, #viewFurniture",
   ).forEach((element) => {
     element.disabled = editorTemporarilyDisabled;
   });
@@ -2000,6 +2145,7 @@ function confirmModel() {
     return;
   }
   modelConfirmed = true;
+  forcedStep = null;
   setOpeningPickArmed(false);
   clearRouteVisualization();
   setHallwayTransparency(true);
@@ -2166,6 +2312,16 @@ async function runSimulation(startPose = null) {
       document.querySelector("#playRoute").textContent = "Pause route";
       document.querySelector("#videoPlayRoute").textContent = "Pause";
       updateHeuristicCheckpointState(0);
+      showResultDialog({
+        kind: "fail",
+        title: "It doesn't fit",
+        text: `${result.failureReason} The failed checkpoint is shown in the 3D view.`,
+        actions: [
+          { label: "Inspect it", primary: true },
+          { label: "Change furniture", go: 3 },
+          { label: "Edit room", go: 1 },
+        ],
+      });
       return;
     }
     const shownCandidates = showBestEntrancePoses(
@@ -2178,12 +2334,32 @@ async function runSimulation(startPose = null) {
       `${result.failureReason}` +
       (shownCandidates ? " Best entrance poses are shown." : "") +
       searchHint;
+    showResultDialog({
+      kind: "fail",
+      title: "No route found",
+      text: status.textContent,
+      actions: [
+        { label: "Change furniture & settings", primary: true, go: 3 },
+        { label: "Edit room", go: 1 },
+        { label: "Close" },
+      ],
+    });
     return;
   }
 
   status.textContent = result.solver === "heuristic"
     ? `Heuristic route completed: ${result.path.length} animation frames.`
     : `Route found: ${result.path.length} collision-free animation frames.`;
+  showResultDialog({
+    kind: "success",
+    title: "It fits!",
+    text: `${status.textContent} Press Play route to watch it move through the room.`,
+    actions: [
+      { label: "Watch the route", primary: true },
+      { label: "Try other furniture", go: 3 },
+      { label: "Edit room", go: 1 },
+    ],
+  });
   showRoute(result.path);
   setSimulationActionsEnabled(true);
   setFurniturePose(result.path[0]);
@@ -2616,6 +2792,15 @@ document.querySelector("#pickOpenings").addEventListener("click", () => {
   setOpeningPickArmed(!openingPickArmed);
 });
 document.querySelector("#viewFurniture").addEventListener("click", viewFurniture);
+document.querySelectorAll("[data-goto]").forEach((element) => {
+  element.addEventListener("click", () => goToStep(Number(element.dataset.goto)));
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeResultDialog();
+});
+document.querySelector("#resultDialog").addEventListener("click", (event) => {
+  if (event.target.id === "resultDialog") closeResultDialog();
+});
 document.querySelector("#closeRouteVideo").addEventListener("click", () => {
   animationPlaying = false;
   setHallwayTransparency(modelConfirmed);
@@ -2647,10 +2832,12 @@ document.querySelector("#projectFile").addEventListener("change", async (event) 
   event.target.value = "";
 });
 document.querySelector("#entranceFace").addEventListener("change", () => {
+  forcedStep = null;
   openingPickRole = "exit";
   refreshOpeningHighlights();
 });
 document.querySelector("#exitFace").addEventListener("change", () => {
+  forcedStep = null;
   openingPickRole = "entrance";
   refreshOpeningHighlights();
 });
@@ -2903,8 +3090,8 @@ document.querySelector("#reset").addEventListener("click", () => {
   selectedObject.params = { ...defaults };
   syncFields(defaults);
   updateReadout();
-  camera.position.set(9, -11, 8);
-  controls.target.set(1.7, 1.4, 1.5);
+  camera.position.set(14, -17, 12);
+  controls.target.set(3.2, 1.4, 1.5);
   controls.update();
 });
 
@@ -2960,6 +3147,10 @@ function animate() {
     }
   }
   refreshOpeningsWhileEditing(now);
+  if (now - guideTime > 200) {
+    guideTime = now;
+    updateGuide();
+  }
   updateFurniturePreview();
   controls.update();
   routeVideoControls.update();

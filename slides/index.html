@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Can It Fit? — Slides</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<style>
+:root {
+  --ink: #17211d;
+  --muted: #5d6963;
+  --line: #dce2dd;
+  --paper: #f4f6f2;
+  --green: #166b50;
+  --green-dark: #0e2f26;
+  --green-soft: #e3f2ea;
+  --accent: #d6ef5b;
+  --red: #d65748;
+  --blue: #3974bd;
+  --orange: #f19a3e;
+  --ok: #2eaf68;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b1511; }
+body { font-family: "Manrope", system-ui, sans-serif; color: var(--ink); }
+
+/* 1920x1080 stage, scaled to fit the window */
+#stage {
+  position: absolute; left: 50%; top: 50%;
+  width: 1920px; height: 1080px;
+  transform-origin: center center;
+}
+.slide {
+  position: absolute; inset: 0;
+  padding: 84px 110px 90px;
+  background: var(--paper);
+  opacity: 0; visibility: hidden;
+  transition: opacity .25s ease;
+  display: flex; flex-direction: column;
+}
+.slide.active { opacity: 1; visibility: visible; }
+.slide.dark { background: radial-gradient(circle at 75% 30%, #1b5a45 0%, var(--green-dark) 55%, #08140f 100%); color: #eef5f0; }
+
+.tag {
+  align-self: flex-start;
+  padding: 8px 20px; border-radius: 999px;
+  font-size: 22px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  background: var(--green-soft); color: var(--green);
+}
+.tag.deep { background: var(--green-dark); color: var(--accent); }
+.dark .tag { background: rgba(214,239,91,.15); color: var(--accent); }
+h1 + .lead { margin-top: 44px; }
+h1 { margin: 0; font-size: 150px; line-height: .95; letter-spacing: -.05em; font-weight: 800; }
+h2 { margin: 26px 0 0; font-size: 76px; line-height: 1.04; letter-spacing: -.04em; font-weight: 800; }
+h3 { margin: 0 0 10px; font-size: 38px; letter-spacing: -.02em; font-weight: 800; }
+p, li { font-size: 34px; line-height: 1.42; }
+.lead { font-size: 44px; line-height: 1.35; color: var(--muted); margin: 22px 0 0; }
+.dark .lead { color: #b7cbc1; }
+.hl { color: var(--green); }
+.dark .hl { color: var(--accent); }
+.body { flex: 1; display: grid; gap: 70px; align-items: center; margin-top: 30px; min-height: 0; }
+.cols-2 { grid-template-columns: 1fr 1fr; }
+.cols-4-6 { grid-template-columns: 4fr 6fr; }
+.cols-5-5 { grid-template-columns: 5fr 5fr; }
+.cols-6-4 { grid-template-columns: 6fr 4fr; }
+
+ol.steps { list-style: none; counter-reset: s; margin: 0; padding: 0; display: grid; gap: 20px; }
+ol.steps li { counter-increment: s; display: grid; grid-template-columns: 54px 1fr; gap: 20px; align-items: start; font-size: 32px; line-height: 1.38; }
+ol.steps li::before {
+  content: counter(s); width: 54px; height: 54px; border-radius: 16px;
+  display: grid; place-items: center; background: var(--green); color: white; font-weight: 800; font-size: 28px;
+}
+ul.dots { list-style: none; margin: 0; padding: 0; display: grid; gap: 18px; }
+ul.dots li { position: relative; padding-left: 40px; font-size: 33px; }
+ul.dots li::before { content: ""; position: absolute; left: 0; top: .55em; width: 18px; height: 18px; border-radius: 6px; background: var(--green); }
+.dark ul.dots li::before { background: var(--accent); }
+
+code, .mono { font-family: "DM Mono", ui-monospace, monospace; }
+code { background: #e9eee9; padding: 2px 10px; border-radius: 8px; font-size: .86em; color: var(--green-dark); }
+.dark code { background: rgba(255,255,255,.1); color: var(--accent); }
+.codeblock {
+  font-family: "DM Mono", monospace; font-size: 34px; line-height: 1.6;
+  background: #0f1c17; color: #d7efe2; padding: 34px 42px; border-radius: 22px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.25); white-space: pre;
+}
+.codeblock .c { color: #6f8f80; } .codeblock .k { color: var(--accent); }
+
+.card { background: white; border: 1px solid var(--line); border-radius: 26px; padding: 36px 38px; box-shadow: 0 2px 4px rgba(23,33,29,.04), 0 18px 40px rgba(23,33,29,.07); }
+.cards3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 34px; }
+.card .ic { width: 78px; height: 78px; border-radius: 22px; background: var(--green-soft); display: grid; place-items: center; margin-bottom: 22px; }
+.card p { font-size: 29px; margin: 6px 0 0; color: var(--muted); }
+
+.shot { position: relative; border-radius: 22px; overflow: hidden; border: 1px solid #cfd8d1; box-shadow: 0 30px 70px rgba(10,30,22,.25); background: #eef1ec; }
+.shot img { display: block; width: 100%; }
+.shot .inset {
+  position: absolute; right: 22px; bottom: 22px;
+  border-radius: 16px; border: 2px solid var(--green); box-shadow: 0 16px 40px rgba(0,0,0,.28); background-color: white; background-repeat: no-repeat;
+}
+.shot .pill {
+  position: absolute; left: 22px; top: 22px; padding: 8px 18px; border-radius: 999px;
+  background: rgba(14,47,38,.9); color: white; font-size: 22px; font-weight: 700;
+}
+.callout {
+  margin-top: 26px; padding: 22px 28px; border-radius: 20px;
+  background: var(--green-dark); color: #eaf5ee; font-size: 29px; line-height: 1.4;
+}
+.callout b { color: var(--accent); }
+.callout.warn { background: #3a1f1b; } .callout.warn b { color: #ffb4a8; }
+.stepper-strip { display: flex; align-items: center; gap: 0; margin-top: 8px; }
+.stepper-strip .st { display: flex; align-items: center; gap: 16px; padding: 18px 26px; background: white; border: 1px solid var(--line); border-radius: 20px; font-size: 30px; font-weight: 700; box-shadow: 0 10px 26px rgba(23,33,29,.06); }
+.stepper-strip .st b { width: 46px; height: 46px; border-radius: 50%; background: var(--green); color: white; display: grid; place-items: center; font-size: 24px; }
+.stepper-strip .ar { width: 52px; height: 4px; background: var(--green); margin: 0 6px; border-radius: 2px; position: relative; }
+.stepper-strip .ar::after { content: ""; position: absolute; right: -2px; top: -8px; border-left: 14px solid var(--green); border-top: 10px solid transparent; border-bottom: 10px solid transparent; }
+table.cmp { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 29px; background: white; border-radius: 22px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 18px 40px rgba(23,33,29,.07); }
+.cmp th, .cmp td { padding: 18px 26px; text-align: left; border-bottom: 1px solid var(--line); }
+.cmp th { background: var(--green-dark); color: white; font-size: 26px; letter-spacing: .04em; }
+.cmp tr:last-child td { border-bottom: 0; }
+.cmp td:first-child { font-weight: 800; color: var(--green); }
+.legend { display: flex; gap: 30px; font-size: 26px; color: var(--muted); margin-top: 14px; }
+.legend i { display: inline-block; width: 22px; height: 22px; border-radius: 6px; vertical-align: -3px; margin-right: 10px; }
+svg text { font-family: "Manrope", sans-serif; }
+svg .m { font-family: "DM Mono", monospace; }
+
+/* chrome */
+#bar { position: absolute; left: 0; bottom: 0; height: 8px; background: var(--accent); width: 0; transition: width .25s; z-index: 5; }
+#count { position: absolute; right: 44px; bottom: 26px; font: 500 22px "DM Mono", monospace; color: #8a958f; z-index: 5; }
+.dark ~ #count { color: #b7cbc1; }
+#notes {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 9;
+  background: rgba(8,20,15,.94); color: #eaf5ee; padding: 26px 110px 36px;
+  font-size: 30px; line-height: 1.45; display: none; border-top: 4px solid var(--accent);
+}
+#notes.on { display: block; }
+#help { position: absolute; left: 30px; top: 24px; font: 500 20px "DM Mono", monospace; color: #90a198; z-index: 6; opacity: 0; transition: opacity .4s; }
+#help.on { opacity: 1; }
+aside.n { display: none; }
+@media print { html, body { overflow: visible; } }
+</style>
+</head>
+<body>
+<div id="stage">
+
+<!-- 1 · Title -->
+<section class="slide dark">
+  <span class="tag">Motion planning in the browser</span>
+  <div style="flex:1; display:grid; grid-template-columns: 1.2fr .8fr; align-items:center; gap:40px;">
+    <div>
+      <h1>Can It<br><span class="hl">Fit?</span></h1>
+      <p class="lead" style="max-width:900px">Will the sofa make it through the hallway? Let's build the room, then let a robot-style planner figure it out — and learn how it thinks.</p>
+      <div style="display:flex; gap:16px; margin-top:44px; flex-wrap:wrap">
+        <span class="tag" style="background:rgba(255,255,255,.1); color:#eaf5ee">Three.js</span>
+        <span class="tag" style="background:rgba(255,255,255,.1); color:#eaf5ee">RRT-Connect</span>
+        <span class="tag" style="background:rgba(255,255,255,.1); color:#eaf5ee">No build step</span>
+      </div>
+    </div>
+    <svg viewBox="0 0 520 520" width="100%">
+      <g fill="none" stroke-linejoin="round">
+        <path d="M60 330 L260 430 L460 330 L460 150 L260 50 L60 150 Z" stroke="#d6ef5b" stroke-width="4" opacity=".9"/>
+        <path d="M60 150 L260 250 L460 150 M260 250 L260 430" stroke="#d6ef5b" stroke-width="4" opacity=".55"/>
+        <path d="M120 250 L220 300 L300 260 L200 210 Z" fill="#2eaf68" fill-opacity=".75" stroke="#8de6b0" stroke-width="3"/>
+        <path d="M60 330 L120 250" stroke="#f19a3e" stroke-width="6" stroke-dasharray="2 14" stroke-linecap="round"/>
+      </g>
+      <text x="260" y="500" text-anchor="middle" fill="#b7cbc1" font-size="26" font-weight="700">?</text>
+    </svg>
+  </div>
+  <aside class="n">Hook: everyone has been stuck on a staircase with a couch. Today we'll build a tool that answers 'does it fit?' — and I'll show you how the planner works inside.</aside>
+</section>
+
+<!-- 2 · Problem -->
+<section class="slide">
+  <span class="tag">The problem</span>
+  <h2>Moving a couch is a <span class="hl">6-dimensional</span> puzzle</h2>
+  <div class="body cols-2">
+    <ul class="dots">
+      <li>It slides in <b>3</b> directions: x, y, z</li>
+      <li>It spins in <b>3</b> ways: yaw, pitch, roll</li>
+      <li>Walls, corners and doorways don't care how clever you are</li>
+      <li>"Does it fit?" really means: <b>is there a collision-free path through 6-D space?</b></li>
+    </ul>
+    <svg viewBox="0 0 800 560" width="100%">
+      <rect x="20" y="20" width="760" height="470" rx="24" fill="#dfe6e1"/>
+      <path d="M110 60 H320 V350 H740 V460 H110 Z" fill="#ffffff" stroke="#7f9388" stroke-width="7" stroke-linejoin="round"/>
+      <g transform="translate(215 170) rotate(-90)"><rect x="-90" y="-34" width="180" height="68" rx="10" fill="#2eaf68" fill-opacity=".2" stroke="#2eaf68" stroke-width="3" stroke-dasharray="10 8"/></g>
+      <g transform="translate(235 330) rotate(-38)"><rect x="-90" y="-34" width="180" height="68" rx="10" fill="#2eaf68" fill-opacity=".45" stroke="#2eaf68" stroke-width="3"/></g>
+      <g transform="translate(540 405)"><rect x="-90" y="-34" width="180" height="68" rx="10" fill="#2eaf68" fill-opacity=".9" stroke="#166b50" stroke-width="3"/></g>
+      <text x="400" y="530" text-anchor="middle" font-size="26" fill="#5d6963" font-weight="700">top-down: it has to turn at the corner</text>
+    </svg>
+  </div>
+  <aside class="n">The key idea: a rigid box has six degrees of freedom. A path is a sequence of poses. Fit means such a path exists.</aside>
+</section>
+
+<!-- 3 · Overview -->
+<section class="slide">
+  <span class="tag">What you'll see</span>
+  <h2>One app, three ways to answer it</h2>
+  <div class="body" style="grid-template-rows:auto auto; align-content:center; gap:60px">
+    <div class="cards3">
+      <div class="card"><div class="ic"><svg width="46" height="46" viewBox="0 0 46 46" fill="none" stroke="#166b50" stroke-width="3" stroke-linejoin="round"><path d="M6 16 23 6l17 10v18L23 44 6 34z"/><path d="M6 16l17 10 17-10M23 26v18"/></svg></div><h3>3D room editor</h3><p>Rooms are boxes defined by an origin and three edge vectors. Stretch, skew, add, connect.</p></div>
+      <div class="card"><div class="ic"><svg width="46" height="46" viewBox="0 0 46 46" fill="none" stroke="#166b50" stroke-width="3" stroke-linecap="round"><circle cx="8" cy="36" r="4"/><circle cx="38" cy="10" r="4"/><path d="M11 33 20 24l7 3 8-12"/><path d="M20 24 14 14M27 27l4 10"/></svg></div><h3>Two auto-solvers</h3><p>A probabilistic one (RRT-Connect) and a deterministic straight-shot heuristic.</p></div>
+      <div class="card"><div class="ic"><svg width="46" height="46" viewBox="0 0 46 46" fill="none" stroke="#166b50" stroke-width="3" stroke-linejoin="round"><path d="M14 6v26l7-6 5 11 5-2-5-11h9z"/></svg></div><h3>Manual mode</h3><p>Hold <code>M</code>, drag the furniture yourself. The app tells you when you collide.</p></div>
+    </div>
+    <div class="stepper-strip">
+      <div class="st"><b>1</b>Build</div><div class="ar"></div>
+      <div class="st"><b>2</b>Entrance &amp; exit</div><div class="ar"></div>
+      <div class="st"><b>3</b>Furniture</div><div class="ar"></div>
+      <div class="st"><b>4</b>Solve</div>
+    </div>
+  </div>
+  <aside class="n">Quick tour of the four steps. We'll do each live, then look at the algorithms.</aside>
+</section>
+
+<!-- 4 · Build -->
+<section class="slide">
+  <span class="tag">Hands-on · Step 1</span>
+  <h2>Build the room</h2>
+  <div class="body cols-4-6">
+    <div>
+      <ol class="steps">
+        <li><span>Drag the <b>A / B / C length</b> sliders. Try <code>8 · 2.4 · 2.4</code> — instant hallway.</span></li>
+        <li><span>Change the <b>angles</b> to skew it, or hit the <b>45° two-face box</b> template.</span></li>
+        <li><span>Need a turn? <b>+ Add object</b> → <b>Connect two objects</b> → click a face on each.</span></li>
+      </ol>
+      <div class="callout">Every room is a box: <b>O + s·A + t·B + u·C</b>, with s, t, u from 0 to 1. Turn on <b>vector labels</b> to see A, B, C.</div>
+    </div>
+    <div class="shot"><img src="img/s1b-labels.jpg" alt="Hallway built from three vectors" /></div>
+  </div>
+  <aside class="n">Live: drag sliders, show labels, add a second object and connect. Mention drag to move blocks, drag empty space to orbit.</aside>
+</section>
+
+<!-- 5 · Openings -->
+<section class="slide">
+  <span class="tag">Hands-on · Step 2</span>
+  <h2>Choose the entrance &amp; exit</h2>
+  <div class="body cols-4-6">
+    <div>
+      <ol class="steps">
+        <li><span>Press <b>Pick faces in 3D view</b>.</span></li>
+        <li><span>Click an outside wall: first the <b style="color:#2f9a5e">entrance</b>, then the <b style="color:#d97f1a">exit</b>. (Or use the dropdowns.)</span></li>
+        <li><span>Press <b>Confirm 3D model</b> — the room locks.</span></li>
+      </ol>
+      <div class="callout"><b>Only these two faces are doorways.</b> Every other wall stays solid — the furniture can't cheat through them.</div>
+    </div>
+    <div class="shot"><img src="img/s2-openings.jpg" alt="Entrance and exit selection" />
+      <div class="inset" style="width:363px;height:350px;background-image:url(img/s2-openings.jpg);background-size:1426px auto;background-position:-1056px -317px"></div>
+    </div>
+  </div>
+  <aside class="n">Changed your mind later? Click step 1 or 2 in the stepper to unlock the room again.</aside>
+</section>
+
+<!-- 6 · Furniture -->
+<section class="slide">
+  <span class="tag">Hands-on · Step 3</span>
+  <h2>Describe the furniture</h2>
+  <div class="body cols-4-6">
+    <div>
+      <ol class="steps">
+        <li><span>Enter <b>Length · Width · Height</b>. Try <code>2.5 · 1.2 · 1.2</code>.</span></li>
+        <li><span>The <b style="color:#2f9a5e">green box</b> is your furniture, parked beside the room. <b>Show furniture in 3D view</b> to focus it.</span></li>
+        <li><span>Set <b>Clearance</b> (<code>0.1</code>) — a safety margin around every side.</span></li>
+      </ol>
+      <div class="callout">Furniture is one rigid box. Clearance <b>grows the box</b> in every direction before any collision check.</div>
+    </div>
+    <div class="shot"><img src="img/s3-furniture.jpg" alt="Furniture preview" />
+      <div class="inset" style="width:363px;height:244px;background-image:url(img/s3-furniture.jpg);background-size:1426px auto;background-position:-1056px -330px"></div>
+    </div>
+  </div>
+  <aside class="n">The preview only shows in step 3 so it doesn't clutter the other steps. Units are whatever units the room uses.</aside>
+</section>
+
+<!-- 7 · Manual -->
+<section class="slide">
+  <span class="tag">Hands-on · Step 4a</span>
+  <h2>Try it yourself first</h2>
+  <div class="body cols-4-6">
+    <div>
+      <ol class="steps">
+        <li><span><b>Try manually</b> — the furniture starts fully outside the entrance.</span></li>
+        <li><span>Hold <code>M</code> and drag. Use the sliders for <b>height</b>, <b>yaw</b>, <b>pitch</b>, <b>roll</b>.</span></li>
+        <li><span>Stuck at a corner? <b>Auto Pilot</b>: click a furniture edge, then a room edge — they snap parallel.</span></li>
+      </ol>
+      <div class="legend"><span><i style="background:#2eaf68"></i>inside, legal</span><span><i style="background:#e6b83f"></i>outside</span><span><i style="background:#d94d45"></i>collision</span></div>
+      <div class="callout"><b>You win</b> when the furniture passes completely through the exit — a pop-up tells you.</div>
+    </div>
+    <div class="shot"><img src="img/s4-manual.jpg" alt="Manual mode" /></div>
+  </div>
+  <aside class="n">Live: drag the box in, show the colour change on collision, then try Auto Pilot. Make the viewer feel how hard it is — that sets up why a planner helps.</aside>
+</section>
+
+<!-- 8 · Solver -->
+<section class="slide">
+  <span class="tag">Hands-on · Step 4b</span>
+  <h2>Now let the solver try</h2>
+  <div class="body cols-4-6">
+    <div>
+      <ol class="steps">
+        <li><span>Pick <b>RRT-Connect</b> or <b>Heuristic</b>, then <b>Run selected solver</b>.</span></li>
+        <li><span>A pop-up gives the verdict: <b style="color:#2f9a5e">It fits!</b> or <b style="color:#d94d45">No route</b>.</span></li>
+        <li><span>Scrub the timeline. Colours: green clear, yellow tight, red collision.</span></li>
+      </ol>
+      <div class="callout warn"><b>Failed?</b> Raise max iterations, allow roll sampling, reshape the room — or go back a step.</div>
+    </div>
+    <div class="shot"><img src="img/s4-route.jpg" alt="Route playback" />
+      <div class="inset" style="width:410px;height:384px;background-image:url(img/s4-result-dialog.jpg);background-size:1339px auto;background-position:-465px -229px"></div>
+    </div>
+  </div>
+  <aside class="n">Run it live. Show a pass, then shrink the furniture width until it fails and show the failure pop-up.</aside>
+</section>
+
+<!-- 9 · Divider -->
+<section class="slide dark">
+  <span class="tag">Under the hood</span>
+  <div style="flex:1; display:flex; flex-direction:column; justify-content:center">
+    <h1 style="font-size:130px">How does it<br><span class="hl">actually think?</span></h1>
+    <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:34px; margin-top:70px">
+      <div class="card" style="background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.15); box-shadow:none"><h3 style="color:var(--accent)">1 · Pose</h3><p style="color:#c9dad1">How is a position stored?</p></div>
+      <div class="card" style="background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.15); box-shadow:none"><h3 style="color:var(--accent)">2 · Collision</h3><p style="color:#c9dad1">How do we know it's legal?</p></div>
+      <div class="card" style="background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.15); box-shadow:none"><h3 style="color:var(--accent)">3 · Search</h3><p style="color:#c9dad1">How do we find a path?</p></div>
+    </div>
+  </div>
+  <aside class="n">Switch gears: from using it to understanding it. Three questions, three slides, then the two solvers.</aside>
+</section>
+
+<!-- 10 · Pose -->
+<section class="slide">
+  <span class="tag deep">Technique · 1</span>
+  <h2>A position is <span class="hl">six numbers</span></h2>
+  <div class="body cols-5-5">
+    <div>
+      <div class="codeblock"><span class="c">// furniture pose</span>
+{ x, y, z,
+  yaw, pitch, roll }</div>
+      <ul class="dots" style="margin-top:34px">
+        <li>3 to translate, 3 to rotate</li>
+        <li>Rotations use Euler order <code>ZYX</code>, converted to a <b>quaternion</b></li>
+        <li><b>Allow roll sampling</b> off? The search drops to 5-D — faster</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 700 560" width="100%">
+      <g stroke-linecap="round" fill="none">
+        <path d="M350 330 L350 80" stroke="#3974bd" stroke-width="6"/><path d="M350 330 L580 440" stroke="#d65748" stroke-width="6"/><path d="M350 330 L120 440" stroke="#278d61" stroke-width="6"/>
+      </g>
+      <text x="350" y="62" text-anchor="middle" font-size="30" font-weight="800" fill="#3974bd">z</text>
+      <text x="600" y="458" font-size="30" font-weight="800" fill="#d65748">x</text>
+      <text x="90" y="458" font-size="30" font-weight="800" fill="#278d61">y</text>
+      <path d="M350 330 L450 285 L520 320 L420 366 Z" fill="#2eaf68" fill-opacity=".75" stroke="#166b50" stroke-width="3"/>
+      <path d="M420 366 L420 410 L520 364 L520 320" fill="#2eaf68" fill-opacity=".5" stroke="#166b50" stroke-width="3"/>
+      <path d="M350 330 L350 374 L420 410" fill="#2eaf68" fill-opacity=".35" stroke="#166b50" stroke-width="3"/>
+      <g fill="none" stroke="#17211d" stroke-width="3"><path d="M270 150 A110 36 0 1 1 430 150" marker-end="url(#a)"/></g>
+      <defs><marker id="a" markerWidth="10" markerHeight="10" refX="6" refY="5" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="#17211d"/></marker></defs>
+      <text x="470" y="150" font-size="26" font-weight="700" fill="#17211d">yaw</text>
+      <text x="350" y="530" text-anchor="middle" font-size="26" font-weight="700" fill="#5d6963">pitch = tip up · roll = barrel-roll</text>
+    </svg>
+  </div>
+  <aside class="n">poseQuaternion in planner.js builds the rotation. We use ZYX order everywhere so rendering, collision and saving agree.</aside>
+</section>
+
+<!-- 11 · Collision -->
+<section class="slide">
+  <span class="tag deep">Technique · 2</span>
+  <h2>Is this pose <span class="hl">legal?</span></h2>
+  <div class="body cols-5-5">
+    <div>
+      <ul class="dots">
+        <li>The room is a <b>union of boxes</b>. A point is inside if <code>p = O + sA + tB + uC</code> with s, t, u ∈ [0, 1]</li>
+        <li>Furniture is sampled on its <b>shell</b>: a 5×5×5 grid minus the interior = <b>98 points</b>, grown by clearance</li>
+        <li><b>Every</b> point must be inside the room</li>
+        <li>Between two poses we <b>interpolate</b> and check every step</li>
+        <li>Crossing a wall is allowed <b>only through</b> the entrance / exit polygon</li>
+      </ul>
+    </div>
+    <svg viewBox="0 0 760 560" width="100%">
+      <path d="M40 120 H720 V440 H40 Z" fill="#e8eee9" stroke="#7f9388" stroke-width="6"/>
+      <g transform="translate(520 170) rotate(-18)">
+        <rect x="-170" y="-60" width="340" height="120" rx="8" fill="#2eaf68" fill-opacity=".25" stroke="#166b50" stroke-width="4"/>
+      </g>
+      <g id="pts"></g>
+      <text x="380" y="530" text-anchor="middle" font-size="26" font-weight="700" fill="#5d6963">● inside   <tspan fill="#d94d45">● outside = illegal</tspan></text>
+    </svg>
+  </div>
+  <aside class="n">isPoseValid in planner.js. Simple, brutally effective: sample the shell, test each point against each box. The same check backs manual mode and both solvers — nobody gets special treatment.</aside>
+</section>
+
+<!-- 12 · RRT -->
+<section class="slide">
+  <span class="tag deep">Technique · 3</span>
+  <h2>RRT-Connect: grow two trees until they <span class="hl">meet</span></h2>
+  <div class="body cols-5-5">
+    <ol class="steps">
+      <li><span>One tree grows from the <b style="color:#2f9a5e">start</b>, one from the <b style="color:#d97f1a">goal</b></span></li>
+      <li><span>Pick a <b>random pose</b> (the ✕). Step the nearest node toward it — if the edge is legal, keep it</span></li>
+      <li><span>Then the <b>other tree</b> greedily chases that new node (up to 160 steps)</span></li>
+      <li><span>Trees touch → <b>path found</b>. Smooth it, resample it, animate it</span></li>
+    </ol>
+    <svg viewBox="0 0 800 560" width="100%">
+      <rect x="20" y="40" width="760" height="480" rx="24" fill="#eaf0eb" stroke="#cfd8d1" stroke-width="3"/>
+      <g stroke-width="3.5" stroke-linecap="round" fill="none">
+        <g stroke="#2eaf68"><path d="M90 280 L150 250 L210 270 L270 230 L330 240 M150 250 L170 190 L230 160 M210 270 L240 330 L300 360 M270 230 L300 170 L360 140 M300 360 L370 380 L430 330 M240 330 L190 390 L150 430"/></g>
+        <g stroke="#e58c28"><path d="M710 280 L650 300 L590 270 L540 290 L480 270 M650 300 L630 360 L570 390 M590 270 L600 200 L540 160 M540 290 L520 350 L470 400 M480 270 L450 215 L400 220 M630 360 L690 410"/></g>
+        <path d="M90 280 L150 250 L210 270 L270 230 L330 240 L390 268 L430 262 L480 270 L540 290 L590 270 L650 300 L710 280" stroke="#3974bd" stroke-width="7" fill="none" opacity=".9"/>
+      </g>
+      <circle cx="90" cy="280" r="16" fill="#2eaf68"/><circle cx="710" cy="280" r="16" fill="#e58c28"/>
+      <g stroke="#17211d" stroke-width="5" stroke-linecap="round"><path d="M372 320 l24 24 M396 320 l-24 24"/></g>
+      <text x="384" y="372" text-anchor="middle" font-size="22" font-weight="700" fill="#17211d">random</text>
+      <text x="90" y="318" text-anchor="middle" font-size="24" font-weight="800" fill="#166b50">start</text>
+      <text x="710" y="318" text-anchor="middle" font-size="24" font-weight="800" fill="#b86a14">goal</text>
+    </svg>
+  </div>
+  <div class="callout" style="margin-top:0"><b>Probabilistic:</b> finding a route proves it fits — <b>failing doesn't prove it can't</b>. Run it again or raise iterations. We never "fix" failures by quietly shrinking clearance.</div>
+  <aside class="n">Step sizes: position step is the smallest room dimension divided by 28, angle step is 4 degrees. Every edge is validated with the collision check from the last slide.</aside>
+</section>
+
+<!-- 13 · Smart starts -->
+<section class="slide">
+  <span class="tag deep">Technique · 4</span>
+  <h2>Smart starts beat <span class="hl">pure luck</span></h2>
+  <div class="body cols-5-5">
+    <div>
+      <p style="margin:0 0 22px; color:var(--muted)">Random sampling alone rarely threads a tight doorway. So we seed the search:</p>
+      <ol class="steps">
+        <li><span>Sample offsets across the opening × <b>15°</b> yaw/pitch/roll orientations</span></li>
+        <li><span><b>Refine</b> the promising ones at 5°</span></li>
+        <li><span><b>Probe inward</b>: how deep does each candidate get?</span></li>
+        <li><span><b>Rank</b> by depth, clearance, alignment, offset, tilt</span></li>
+        <li><span>Feed the top poses as <b>many starts and goals</b></span></li>
+      </ol>
+    </div>
+    <svg viewBox="0 0 700 560" width="100%">
+      <g id="funnel"></g>
+      <path d="M120 70 H580 L440 300 H260 Z" fill="none" stroke="#9fb0a6" stroke-width="3" stroke-dasharray="8 8"/>
+      <path d="M260 300 H440 L400 470 H300 Z" fill="none" stroke="#9fb0a6" stroke-width="3" stroke-dasharray="8 8"/>
+      <text x="350" y="40" text-anchor="middle" font-size="26" font-weight="800" fill="#5d6963">thousands of sampled poses</text>
+      <text x="350" y="530" text-anchor="middle" font-size="26" font-weight="800" fill="#166b50">best few → start &amp; goal sets</text>
+    </svg>
+  </div>
+  <aside class="n">Default is to sample up to 2000 orientations per opening. This is what makes the difference between 'sometimes works' and 'usually works'.</aside>
+</section>
+
+<!-- 14 · Heuristic -->
+<section class="slide">
+  <span class="tag deep">Technique · 5</span>
+  <h2>The straight-shot <span class="hl">heuristic</span></h2>
+  <div class="body cols-5-5">
+    <div>
+      <ol class="steps">
+        <li><span>Travel direction = the block edge <b>not</b> in the entrance face</span></li>
+        <li><span>Point the furniture's <b>longest axis</b> along it</span></li>
+        <li><span>Project the doorway along that direction: does the <b>cross-section</b> (with clearance) fit?</span></li>
+        <li><span>Centre it, stage it outside, <b>slide straight in</b></span></li>
+      </ol>
+      <div class="callout">Deterministic, instant, and when it fails it names the <b>checkpoint</b> where it got stuck. Multi-block rooms hand off between blocks with a short RRT.</div>
+    </div>
+    <table class="cmp">
+      <tr><th></th><th>RRT-Connect</th><th>Heuristic</th></tr>
+      <tr><td>Idea</td><td>Random search</td><td>Slide it in straight</td></tr>
+      <tr><td>Result</td><td>Different each run</td><td>Same every run</td></tr>
+      <tr><td>Handles turns</td><td>Yes</td><td>Via handoffs</td></tr>
+      <tr><td>On failure</td><td>Try again</td><td>Shows the stuck spot</td></tr>
+    </table>
+  </div>
+  <aside class="n">Use the heuristic for a quick yes on straight corridors and to debug why something doesn't fit; use RRT-Connect when it needs real manoeuvring.</aside>
+</section>
+
+<!-- 15 · Hybrid / limits -->
+<section class="slide">
+  <span class="tag deep">Technique · 6</span>
+  <h2>You + planner = <span class="hl">hybrid</span></h2>
+  <div class="body cols-5-5">
+    <div>
+      <ol class="steps">
+        <li><span>Get the furniture <b>fully inside</b> by hand (Auto Pilot helps)</span></li>
+        <li><span>Press <b>Continue with solver</b></span></li>
+        <li><span>The planner starts from <b>your exact pose</b> and finds the rest</span></li>
+      </ol>
+      <p style="margin-top:34px; color:var(--muted)">Humans are great at the awkward entrance. Planners are great at the long middle.</p>
+    </div>
+    <div class="card">
+      <h3>Honest limits</h3>
+      <ul class="dots" style="margin-top:18px">
+        <li>Furniture is a <b>single box</b></li>
+        <li>Rooms are connected <b>boxes</b> (no curves)</li>
+        <li>Rigid only: no tilting-by-bending, no taking legs off</li>
+        <li>RRT is <b>probabilistic</b></li>
+      </ul>
+    </div>
+  </div>
+  <aside class="n">Be upfront about what this is: a fast feasibility estimate, not a CAD-grade guarantee.</aside>
+</section>
+
+<!-- 16 · Challenge -->
+<section class="slide">
+  <span class="tag">Your turn</span>
+  <h2>Challenge: find the <span class="hl">tipping point</span></h2>
+  <div class="body cols-5-5">
+    <ol class="steps">
+      <li><span>Build an <b>L-shaped hallway</b>: two blocks, connected end to end</span></li>
+      <li><span>Furniture <code>2.5 · 1.2 · 1.2</code>, clearance <code>0.1</code></span></li>
+      <li><span>Try it <b>manually</b>, then run <b>both solvers</b></span></li>
+      <li><span>Shrink the hallway width until it <b>stops fitting</b></span></li>
+      <li><span>Does <b>roll sampling</b> rescue it?</span></li>
+    </ol>
+    <div class="card" style="text-align:center">
+      <div style="font-size:120px; line-height:1">🛋️</div>
+      <h3 style="margin-top:14px">What's the narrowest hallway your sofa survives?</h3>
+      <p>Share your number in the comments.</p>
+    </div>
+  </div>
+  <aside class="n">Invite viewers to pause the video and try it. Answers will vary a lot depending on the turn geometry.</aside>
+</section>
+
+<!-- 17 · Run it -->
+<section class="slide dark">
+  <span class="tag">Run it yourself</span>
+  <h2>Two commands to start</h2>
+  <div class="body cols-6-4">
+    <div>
+      <div class="codeblock"><span class="c"># no npm, no build</span>
+<span class="k">cd</span> FurnitureSim_3D_can
+<span class="k">python3</span> -m http.server 8000
+<span class="c"># open http://localhost:8000</span></div>
+      <p class="lead" style="margin-top:34px">Three.js loads from a CDN, so you just need a browser and an internet connection.</p>
+    </div>
+    <div class="card" style="background:rgba(255,255,255,.07); border-color:rgba(255,255,255,.15); box-shadow:none; color:#eaf5ee">
+      <h3 style="color:var(--accent)">Where things live</h3>
+      <p style="color:#d4e4db; line-height:1.9"><code>app.js</code> scene &amp; UI<br><code>planner.js</code> collision &amp; solvers<br><code>manual.js</code> drag-it-yourself<br><code>index.html</code> + <code>styles.css</code></p>
+    </div>
+  </div>
+  <div style="text-align:center; font-size:56px; font-weight:800; letter-spacing:-.03em">Thanks for watching — <span class="hl">go move some couches.</span></div>
+  <aside class="n">Close: recap the three ideas — pose, collision check, search — and point to the challenge.</aside>
+</section>
+
+</div>
+
+<div id="bar"></div>
+<div id="count"></div>
+<div id="help">← → navigate · N notes · F fullscreen</div>
+<div id="notes"></div>
+
+<script>
+// ----- diagrams generated in JS -----
+(function () {
+  const NS = "http://www.w3.org/2000/svg";
+  const mk = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); parent.appendChild(e); return e; };
+  // collision sample points: shell of a 5x5x5 grid projected to 2D, rotated into place
+  const pts = document.getElementById("pts");
+  const grid = [-1, -.5, 0, .5, 1];
+  const ang = -18 * Math.PI / 180, cx0 = 520, cy0 = 170;
+  for (const x of grid) for (const y of grid) {
+    if (Math.abs(x) !== 1 && Math.abs(y) !== 1) continue;
+    const px = x * 170, py = y * 60;
+    const X = cx0 + px * Math.cos(ang) - py * Math.sin(ang);
+    const Y = cy0 + px * Math.sin(ang) + py * Math.cos(ang);
+    const inside = X >= 40 && X <= 720 && Y >= 120 && Y <= 440;
+    mk("circle", { cx: X, cy: Y, r: 8, fill: inside ? "#166b50" : "#d94d45" }, pts);
+  }
+  // funnel dots
+  const f = document.getElementById("funnel");
+  let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let i = 0; i < 90; i++) {
+    const y = 80 + rnd() * 210, w = 460 - (y - 70) * (140 / 230);
+    const x = 350 + (rnd() - .5) * (w - 20);
+    mk("circle", { cx: x, cy: y, r: 6, fill: "#9fb0a6", "fill-opacity": ".8" }, f);
+  }
+  for (let i = 0; i < 14; i++) {
+    const y = 315 + rnd() * 140; const w = 170 - (y - 300) * .5;
+    mk("circle", { cx: 350 + (rnd() - .5) * (w - 20), cy: y, r: 9, fill: "#2eaf68" }, f);
+  }
+})();
+
+// ----- slide engine -----
+const stage = document.getElementById("stage");
+const slides = [...document.querySelectorAll(".slide")];
+const bar = document.getElementById("bar");
+const count = document.getElementById("count");
+const notes = document.getElementById("notes");
+const help = document.getElementById("help");
+let i = Math.max(0, Math.min(slides.length - 1, (parseInt(location.hash.slice(1)) || 1) - 1));
+
+function fit() {
+  const s = Math.min(innerWidth / 1920, innerHeight / 1080);
+  stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+}
+function show(n) {
+  i = Math.max(0, Math.min(slides.length - 1, n));
+  slides.forEach((s, k) => s.classList.toggle("active", k === i));
+  bar.style.width = ((i + 1) / slides.length * 100) + "%";
+  count.textContent = `${i + 1} / ${slides.length}`;
+  count.style.color = slides[i].classList.contains("dark") ? "#b7cbc1" : "#8a958f";
+  notes.textContent = slides[i].querySelector("aside.n")?.textContent ?? "";
+  history.replaceState(null, "", "#" + (i + 1));
+}
+addEventListener("resize", fit);
+addEventListener("keydown", (e) => {
+  if (["ArrowRight", "PageDown", " ", "Enter"].includes(e.key)) { show(i + 1); e.preventDefault(); }
+  else if (["ArrowLeft", "PageUp", "Backspace"].includes(e.key)) { show(i - 1); e.preventDefault(); }
+  else if (e.key === "Home") show(0);
+  else if (e.key === "End") show(slides.length - 1);
+  else if (e.key.toLowerCase() === "n") notes.classList.toggle("on");
+  else if (e.key.toLowerCase() === "f") (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen());
+});
+addEventListener("click", (e) => { show(e.clientX > innerWidth / 2 ? i + 1 : i - 1); });
+fit(); show(i);
+help.classList.add("on"); setTimeout(() => help.classList.remove("on"), 3500);
+</script>
+</body>
+</html>

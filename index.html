@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./styles.css?v=20260607-22" />
     <script type="importmap">
       {
         "imports": {
@@ -29,13 +29,13 @@
       <section class="viewport" aria-label="Interactive 3D viewport">
         <div id="scene"></div>
 
-        <header class="brand">
-          <span class="brand-mark" aria-hidden="true"></span>
+        <div id="guide" class="guide" role="status">
+          <b id="guideStep" class="guide-step">1</b>
           <div>
-            <p class="eyebrow">Geometry workspace</p>
-            <h1>Can It Fit?</h1>
+            <strong id="guideTitle">Build your room</strong>
+            <p id="guideText"></p>
           </div>
-        </header>
+        </div>
 
         <div class="view-hint">
           <span class="mouse-icon" aria-hidden="true"></span>
@@ -50,12 +50,31 @@
       </section>
 
       <aside class="control-panel">
-        <div class="panel-heading">
-          <p class="eyebrow">Shape parameters</p>
-          <h2>Edge vectors</h2>
-          <p>Define the solid from origin <strong>O</strong> and vectors <strong>A</strong>, <strong>B</strong>, and <strong>C</strong>.</p>
-        </div>
+        <header class="panel-top">
+          <div class="panel-title">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <div>
+              <p class="eyebrow">Moving-day planner</p>
+              <h2>Can It Fit?</h2>
+            </div>
+          </div>
+          <div class="panel-file">
+            <button id="saveProject" type="button">Save</button>
+            <button id="loadProject" type="button" class="ghost">Load</button>
+            <input id="projectFile" type="file" accept=".json,application/json" hidden />
+          </div>
+          <p id="projectStatus" class="status-line">Projects can be reopened and edited later.</p>
+          <ol id="stepper" class="stepper" aria-label="Progress">
+            <li data-step="1" class="active"><button type="button" class="step-link" data-goto="1"><b>1</b><span>Build</span></button></li>
+            <li data-step="2"><button type="button" class="step-link" data-goto="2"><b>2</b><span>Openings</span></button></li>
+            <li data-step="3"><button type="button" class="step-link" data-goto="3"><b>3</b><span>Furniture</span></button></li>
+            <li data-step="4"><button type="button" class="step-link" data-goto="4"><b>4</b><span>Solve</span></button></li>
+          </ol>
+        </header>
 
+        <details id="card1" class="card" open>
+          <summary><b class="card-num">1</b><span><strong>Build the room</strong><small>Shape blocks, add more and connect them</small></span></summary>
+          <div class="card-body">
         <section class="shape-templates" aria-label="Shape templates">
           <div>
             <strong>Starting templates</strong>
@@ -64,11 +83,45 @@
           <button id="applySlantedTemplate" type="button">45° two-face box</button>
         </section>
 
-        <section class="project-tools" aria-label="Project file controls">
-          <button id="saveProject" type="button">Save project</button>
-          <button id="loadProject" type="button">Load project</button>
-          <input id="projectFile" type="file" accept=".json,application/json" hidden />
-          <p id="projectStatus">Projects can be reopened and edited later.</p>
+        <section class="object-tools" aria-label="Object controls">
+          <div>
+            <strong id="selectedObject">Object 1 selected</strong>
+            <small id="objectCount">1 object in scene</small>
+          </div>
+          <div class="object-actions">
+            <button id="addObject" type="button">+ Add object</button>
+            <button id="deleteObject" type="button">Delete</button>
+          </div>
+        </section>
+
+        <section class="join-tools" aria-label="Surface connection controls">
+          <button id="startJoin" type="button">Connect two objects</button>
+          <div id="joinLegend" class="join-legend" hidden>
+            <span><i class="join-color-1"></i><b id="joinObject1">Object 1</b></span>
+            <span><i class="join-color-2"></i><b id="joinObject2">Object 2</b></span>
+          </div>
+          <p id="joinStatus">Select two objects, then select one face on each.</p>
+        </section>
+
+        <section id="attachmentTools" class="attachment-tools" hidden aria-label="Attachment group controls">
+          <div class="attachment-heading">
+            <div>
+              <strong id="groupStatus">Attached group</strong>
+              <small id="groupCount"></small>
+            </div>
+          </div>
+          <label for="attachmentSelect">Selected object attachment</label>
+          <select id="attachmentSelect"></select>
+          <div class="attachment-actions">
+            <button id="editAttachment" type="button">Edit attachment</button>
+            <button id="detachAttachment" type="button">Detach</button>
+          </div>
+          <div class="group-rotation">
+            <span>Rotate attached group</span>
+            <div><b>X</b><button data-axis="x" data-angle="-15" type="button">−15°</button><button data-axis="x" data-angle="15" type="button">+15°</button></div>
+            <div><b>Y</b><button data-axis="y" data-angle="-15" type="button">−15°</button><button data-axis="y" data-angle="15" type="button">+15°</button></div>
+            <div><b>Z</b><button data-axis="z" data-angle="-15" type="button">−15°</button><button data-axis="z" data-angle="15" type="button">+15°</button></div>
+          </div>
         </section>
 
         <form id="controls">
@@ -155,47 +208,37 @@
           <i aria-hidden="true"></i>
         </label>
 
-        <section class="object-tools" aria-label="Object controls">
+        <section class="vector-readout" aria-label="Calculated vectors">
           <div>
-            <strong id="selectedObject">Object 1 selected</strong>
-            <small id="objectCount">1 object in scene</small>
+            <span class="vector-name vector-a">A</span>
+            <code id="vectorA">(4.00, 0.00, 0.00)</code>
           </div>
-          <div class="object-actions">
-            <button id="addObject" type="button">+ Add object</button>
-            <button id="deleteObject" type="button">Delete</button>
+          <div>
+            <span class="vector-name vector-b">B</span>
+            <code id="vectorB">(0.00, 4.00, 0.00)</code>
           </div>
-        </section>
-
-        <section class="join-tools" aria-label="Surface connection controls">
-          <button id="startJoin" type="button">Connect two objects</button>
-          <div id="joinLegend" class="join-legend" hidden>
-            <span><i class="join-color-1"></i><b id="joinObject1">Object 1</b></span>
-            <span><i class="join-color-2"></i><b id="joinObject2">Object 2</b></span>
-          </div>
-          <p id="joinStatus">Select two objects, then select one face on each.</p>
-        </section>
-
-        <section id="attachmentTools" class="attachment-tools" hidden aria-label="Attachment group controls">
-          <div class="attachment-heading">
-            <div>
-              <strong id="groupStatus">Attached group</strong>
-              <small id="groupCount"></small>
-            </div>
-          </div>
-          <label for="attachmentSelect">Selected object attachment</label>
-          <select id="attachmentSelect"></select>
-          <div class="attachment-actions">
-            <button id="editAttachment" type="button">Edit attachment</button>
-            <button id="detachAttachment" type="button">Detach</button>
-          </div>
-          <div class="group-rotation">
-            <span>Rotate attached group</span>
-            <div><b>X</b><button data-axis="x" data-angle="-15" type="button">−15°</button><button data-axis="x" data-angle="15" type="button">+15°</button></div>
-            <div><b>Y</b><button data-axis="y" data-angle="-15" type="button">−15°</button><button data-axis="y" data-angle="15" type="button">+15°</button></div>
-            <div><b>Z</b><button data-axis="z" data-angle="-15" type="button">−15°</button><button data-axis="z" data-angle="15" type="button">+15°</button></div>
+          <div>
+            <span class="vector-name vector-c">C</span>
+            <code id="vectorC">(0.00, 0.00, 4.00)</code>
           </div>
         </section>
 
+        <section class="measurement-tools" aria-label="Surface distance measurement">
+          <button id="measureSurfaces" type="button">Measure parallel surfaces</button>
+          <button id="clearMeasurement" type="button" hidden>Clear measurement</button>
+          <p id="measurementStatus">Click two parallel surfaces to measure their perpendicular distance.</p>
+        </section>
+
+        <button id="reset" class="secondary-button" type="button">
+          <span aria-hidden="true">↺</span>
+          Reset parameters
+        </button>
+          </div>
+        </details>
+
+        <details id="card2" class="card">
+          <summary><b class="card-num">2</b><span><strong>Entrance &amp; exit</strong><small>Where the furniture goes in and out</small></span></summary>
+          <div class="card-body">
         <section class="opening-tools" aria-label="Entrance and exit">
           <div>
             <strong>Entrance &amp; exit</strong>
@@ -214,22 +257,28 @@
           <p id="workflowStatus">Build the hallway, choose the entrance and exit, then confirm.</p>
         </section>
 
-        <section class="measurement-tools" aria-label="Surface distance measurement">
-          <button id="measureSurfaces" type="button">Measure parallel surfaces</button>
-          <button id="clearMeasurement" type="button" hidden>Clear measurement</button>
-          <p id="measurementStatus">Click two parallel surfaces to measure their perpendicular distance.</p>
-        </section>
-
-        <section class="simulation-tools" aria-label="Furniture fit simulation">
-          <div class="simulation-heading">
-            <p class="eyebrow">Motion planning</p>
-            <h3>Furniture fit</h3>
           </div>
-          <div id="furnitureStage" class="simulation-stage">
-            <div class="furniture-grid">
+        </details>
+
+        <details id="card3" class="card">
+          <summary><b class="card-num">3</b><span><strong>Furniture</strong><small>A simple box — set its size</small></span></summary>
+          <div class="card-body">
+            <button type="button" class="back-link" data-goto="2">‹ Back: edit room &amp; openings</button>
+            <div class="furniture-grid furniture-dims">
               <label>Length<input id="furnitureLength" type="number" min="0.1" step="0.1" value="2.5" /></label>
               <label>Width<input id="furnitureWidth" type="number" min="0.1" step="0.1" value="1.2" /></label>
               <label>Height<input id="furnitureHeight" type="number" min="0.1" step="0.1" value="1.2" /></label>
+            </div>
+            <button id="viewFurniture" type="button" class="ghost">Show furniture in 3D view</button>
+          </div>
+        </details>
+
+        <details id="card4" class="card">
+          <summary><b class="card-num">4</b><span><strong>Solve</strong><small>Let the planner try, or try it yourself</small></span></summary>
+          <div class="card-body simulation-tools">
+            <button type="button" class="back-link" data-goto="3">‹ Back: change furniture size</button>
+          <div id="furnitureStage" class="simulation-stage">
+            <div class="furniture-grid">
               <label>Clearance<input id="clearance" type="number" min="0" step="0.05" value="0.1" /></label>
               <label>Max iterations<input id="maxIterations" type="number" min="1000" max="1000000" step="1000" value="150000" /></label>
               <label>Solver mode
@@ -239,7 +288,6 @@
                 </select>
               </label>
             </div>
-            <button id="viewFurniture" type="button">Show furniture in 3D view</button>
             <label class="simulation-check">
               <input id="allowRoll" type="checkbox" />
               Allow roll sampling
@@ -304,7 +352,7 @@
             </div>
             <p id="manualStatus">Align the furniture outside the entrance, move it inside, then reach the exit.</p>
           </div>
-          <p id="simulationStatus">Choose two exterior openings.</p>
+          <p id="simulationStatus" class="status-line">Choose two exterior openings.</p>
           <ol id="heuristicCheckpoints" class="heuristic-checkpoints" hidden></ol>
           <div id="simulationActions" class="simulation-actions" hidden>
             <button id="playRoute" type="button" disabled>Play route</button>
@@ -312,30 +360,19 @@
             <button id="exportRoute" type="button" disabled>Export JSON</button>
             <input id="routeScrub" type="range" min="0" max="0" step="1" value="0" disabled aria-label="Route frame" />
           </div>
-          <div id="topView" class="top-view" hidden aria-label="Top-down route view"></div>
-        </section>
-
-        <section class="vector-readout" aria-label="Calculated vectors">
-          <div>
-            <span class="vector-name vector-a">A</span>
-            <code id="vectorA">(4.00, 0.00, 0.00)</code>
-          </div>
-          <div>
-            <span class="vector-name vector-b">B</span>
-            <code id="vectorB">(0.00, 4.00, 0.00)</code>
-          </div>
-          <div>
-            <span class="vector-name vector-c">C</span>
-            <code id="vectorC">(0.00, 0.00, 4.00)</code>
-          </div>
-        </section>
-
-        <button id="reset" class="secondary-button" type="button">
-          <span aria-hidden="true">↺</span>
-          Reset parameters
-        </button>
+          <div id="topView" class="top-view" hidden aria-label="Top-down route view"></div>          </div>
+        </details>
       </aside>
     </main>
+
+    <div id="resultDialog" class="result-dialog" hidden role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+      <div class="result-card">
+        <div id="resultIcon" class="result-icon" aria-hidden="true"></div>
+        <h2 id="resultTitle"></h2>
+        <p id="resultText"></p>
+        <div id="resultActions" class="result-actions"></div>
+      </div>
+    </div>
 
     <section id="joinPanel" class="join-panel" hidden aria-label="Join preview">
       <div class="join-panel__heading">
@@ -385,6 +422,6 @@
       <p>Green: clear · Yellow: tight clearance · Red: collision</p>
     </section>
 
-    <script type="module" src="./app.js?v=20260607-19"></script>
+    <script type="module" src="./app.js?v=20260607-22"></script>
   </body>
 </html>
