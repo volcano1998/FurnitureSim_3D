@@ -202,12 +202,84 @@ h1 {
   line-height: 1.65;
 }
 
+.opening-tools {
+  display: grid;
+  gap: 7px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.opening-tools small {
+  display: block;
+  color: var(--muted);
+}
+
+.opening-tools select {
+  width: 100%;
+  padding: 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: white;
+  font-size: 0.7rem;
+}
+
+.opening-tools button.active {
+  background: #2eaf68;
+  color: white;
+}
+
+.furniture-tools {
+  display: grid;
+  gap: 8px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.furniture-tools small {
+  display: block;
+  color: var(--muted);
+}
+
 .project-tools {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 7px;
   padding: 16px 0;
   border-bottom: 1px solid var(--line);
+}
+
+.shape-templates {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.shape-templates div {
+  display: grid;
+  gap: 2px;
+}
+
+.shape-templates strong {
+  font-size: 0.7rem;
+}
+
+.shape-templates small {
+  color: #818a85;
+  font: 400 0.58rem "DM Mono", monospace;
+}
+
+.shape-templates button {
+  padding: 7px 9px;
+  border: 1px solid #d1bc7c;
+  border-radius: 5px;
+  background: #fff9e8;
+  color: #755f20;
+  font-size: 0.62rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .project-tools button {
@@ -771,6 +843,16 @@ input:disabled {
   font-size: 0.66rem;
 }
 
+.furniture-grid select {
+  width: 100%;
+  padding: 7px;
+  border: 1px solid #d4dad5;
+  border-radius: 5px;
+  background: white;
+  color: #44504a;
+  font-size: 0.66rem;
+}
+
 .furniture-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -825,7 +907,8 @@ input:disabled {
 
 .manual-heading,
 .manual-control,
-.manual-actions {
+.manual-actions,
+.auto-pilot-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -838,7 +921,8 @@ input:disabled {
 }
 
 .manual-heading button,
-.manual-actions button {
+.manual-actions button,
+.auto-pilot-heading button {
   padding: 6px 8px;
   border: 1px solid #cbb9d7;
   border-radius: 5px;
@@ -847,6 +931,40 @@ input:disabled {
   font-size: 0.61rem;
   font-weight: 600;
   cursor: pointer;
+}
+
+.manual-actions {
+  flex-wrap: wrap;
+}
+
+.auto-pilot-panel {
+  display: grid;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid #9fb8ce;
+  border-radius: 6px;
+  background: #f4f8fb;
+}
+
+.auto-pilot-panel[hidden] {
+  display: none;
+}
+
+.auto-pilot-heading strong {
+  color: #315f86;
+  font-size: 0.68rem;
+}
+
+.auto-pilot-heading button {
+  border-color: #b8cad9;
+  color: #315f86;
+}
+
+.auto-pilot-panel > p {
+  margin: 0;
+  color: #536a7b;
+  font-size: 0.61rem;
+  line-height: 1.4;
 }
 
 .manual-stage > p {
@@ -900,6 +1018,36 @@ input:disabled {
   color: #6e7974;
   font-size: 0.62rem;
   line-height: 1.45;
+}
+
+.heuristic-checkpoints {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding-left: 20px;
+  color: #5e6b65;
+  font-size: 0.62rem;
+}
+
+.heuristic-checkpoints[hidden] {
+  display: none;
+}
+
+.heuristic-checkpoints li {
+  padding: 5px 6px;
+  border-left: 3px solid #7f9aa8;
+  background: #f4f7f6;
+  cursor: pointer;
+}
+
+.heuristic-checkpoints li.is-failed {
+  border-left-color: #c54b42;
+  color: #9e3832;
+}
+
+.heuristic-checkpoints li.is-active {
+  background: #e9f2f6;
+  font-weight: 700;
 }
 
 .simulation-actions {

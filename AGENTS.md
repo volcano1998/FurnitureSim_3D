@@ -58,7 +58,15 @@ in a browser. At minimum verify:
    through other walls.
 6. Verify the manual win state occurs only after fully passing through the
    exit.
-7. Save and reload a project after structural changes.
+7. In Auto Pilot, select a furniture edge and room edge, verify they become
+   parallel, and confirm every adjustment slider stops at collisions.
+8. Exit Auto Pilot and verify ordinary manual dragging resumes from the
+   adjusted pose.
+9. Move the furniture fully inside manually, hand off to the solver, and
+   verify the automatic route begins at exactly that pose.
+10. Apply the 45-degree template and verify the AB faces are parallelograms
+   while the other four faces remain rectangular.
+11. Save and reload a project after structural changes.
 
 ## Geometry Conventions
 
@@ -97,11 +105,55 @@ When changing manual start placement, verify every clearance-expanded furniture
 vertex is outside all room volumes. The start position is produced by
 `createOutsideEntrancePose()` in `manual.js`.
 
+## Manual Auto Pilot
+
+Auto Pilot is a temporary sub-mode of manual navigation implemented in
+`manual.js`.
+
+- The user selects a furniture edge followed by a room edge.
+- The furniture edge is aligned parallel to the selected room edge.
+- Before entry, if rotating in place is blocked, Auto Pilot may first move the
+  furniture farther along the entrance outward normal and then rotate there.
+  Both transitions must be portal-aware and collision-validated.
+- Twist preserves that parallel direction; U and V offsets use a stable basis
+  perpendicular to it.
+- Travel moves only along the aligned direction.
+- The Auto Pilot travel range must account for projection onto the exit normal
+  and the furniture's clearance-expanded diagonal. A room bounding-box
+  diagonal alone is insufficient for skewed rooms.
+- Auto Pilot travel must treat the first fully-outside exit pose as a valid
+  terminal point rather than clamping against the exit boundary.
+- During Auto Pilot travel only, the exit opening uses an unbounded exterior
+  side so the exit quad itself cannot stop the furniture before success.
+- Every alignment and slider transition must use the same portal-aware,
+  clearance-expanded collision validation as ordinary manual movement.
+- Exiting Auto Pilot keeps the adjusted furniture pose and restores manual
+  interaction.
+
+## Shape Templates
+
+The 45-degree two-face template is represented by `angleAB: 45`,
+`angleAC: 90`, and `angleBC: 90`. This creates two opposite parallelogram
+faces and four rectangular faces. Applying a template must preserve the
+selected object's pose and reject geometry that overlaps another object.
+
 ## Solver Guidance
 
 The automatic planner is probabilistic RRT-Connect. A failed search does not
 prove that no route exists.
 
+- Hybrid mode accepts a user-assisted pose only when the clearance-expanded
+  furniture is fully inside. The planner must use that exact pose as its fixed
+  start and skip automatic entrance planning.
+- Automatic routes begin fully outside the entrance. A portal-aware entrance
+  phase may translate and rotate the furniture with the entrance exterior
+  unbounded until it connects to a fully-inside seed.
+- Automatic start and goal initialization is opening-frame aware. It samples
+  lateral and vertical offsets plus coarse 15-degree yaw/pitch/roll
+  orientations, refines promising candidates at 5 degrees, probes them inward,
+  and ranks them by probe depth, clearance, alignment, offset, and tilt.
+- RRT-Connect is multi-start/multi-goal using the top ranked opening poses.
+  Failed searches return the best entrance poses for visualization.
 - Keep collision validation authoritative; do not improve success rates by
   silently reducing clearance.
 - Prefer better sampling, useful orientation candidates, retries, or search
@@ -109,6 +161,30 @@ prove that no route exists.
 - Validate every returned and smoothed edge with `isEdgeValid()`.
 - Avoid long synchronous loops that freeze the UI. The planner periodically
   yields through the progress callback loop.
+
+## Heuristic Solver
+
+The straight heuristic solver is deterministic and returns named physical
+checkpoints even when it fails.
+
+- The opening's travel direction is the inward block edge family not contained
+  in that face: `AB -> C`, `AC -> B`, and `BC -> A`.
+- The furniture's smallest-area face is perpendicular to its longest axis.
+  Align that longest axis with the travel direction.
+- Project the opening along the travel direction and test the
+  clearance-expanded furniture cross-section against the projected polygon.
+- Center the cross-section on that projection, stage fully outside, then move
+  only along the travel direction.
+- Validate the entire sweep with the same portal-aware collision checks used by
+  manual mode. A failed result must retain its attempted collision pose and
+  stage-specific checkpoint for 3D inspection.
+- In multi-object models, follow the attachment graph from the entrance object
+  to the exit object. Use straight heuristic motion within a block, stop at the
+  last valid pose when that motion is blocked, and use fixed-start RRT to reach
+  a clearance-valid pose fully inside the next block.
+- Every block handoff must end aligned with that block's inward edge direction
+  before straight heuristic motion resumes. Do not change the movement
+  direction without a collision-validated orientation transition.
 
 ## Editing Practices
 

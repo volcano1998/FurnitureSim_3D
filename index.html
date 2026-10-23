@@ -56,6 +56,14 @@
           <p>Define the solid from origin <strong>O</strong> and vectors <strong>A</strong>, <strong>B</strong>, and <strong>C</strong>.</p>
         </div>
 
+        <section class="shape-templates" aria-label="Shape templates">
+          <div>
+            <strong>Starting templates</strong>
+            <small>Apply to the selected object</small>
+          </div>
+          <button id="applySlantedTemplate" type="button">45° two-face box</button>
+        </section>
+
         <section class="project-tools" aria-label="Project file controls">
           <button id="saveProject" type="button">Save project</button>
           <button id="loadProject" type="button">Load project</button>
@@ -188,10 +196,22 @@
           </div>
         </section>
 
+        <section class="opening-tools" aria-label="Entrance and exit">
+          <div>
+            <strong>Entrance &amp; exit</strong>
+            <small>Choose them before confirming the model</small>
+          </div>
+          <button id="pickOpenings" type="button">Pick faces in 3D view</button>
+          <label for="entranceFace">Entrance opening</label>
+          <select id="entranceFace"></select>
+          <label for="exitFace">Exit opening</label>
+          <select id="exitFace"></select>
+        </section>
+
         <section class="workflow-confirm">
           <button id="confirmModel" type="button">Confirm 3D model</button>
           <button id="editModel" type="button" hidden>Edit model</button>
-          <p id="workflowStatus">Finish building and attaching the hallway, then confirm it.</p>
+          <p id="workflowStatus">Build the hallway, choose the entrance and exit, then confirm.</p>
         </section>
 
         <section class="measurement-tools" aria-label="Surface distance measurement">
@@ -205,23 +225,21 @@
             <p class="eyebrow">Motion planning</p>
             <h3>Furniture fit</h3>
           </div>
-          <div id="openingStage" class="simulation-stage" hidden>
-            <span class="stage-number">1</span>
-            <p class="face-pick-hint">Click a surface in the 3D view: entrance first, then exit.</p>
-            <label for="entranceFace">Entrance opening</label>
-            <select id="entranceFace"></select>
-            <label for="exitFace">Exit opening</label>
-            <select id="exitFace"></select>
-            <button id="confirmOpenings" type="button">Confirm entrance &amp; exit</button>
-          </div>
-          <div id="furnitureStage" class="simulation-stage" hidden>
-            <span class="stage-number">2</span>
+          <div id="furnitureStage" class="simulation-stage">
             <div class="furniture-grid">
               <label>Length<input id="furnitureLength" type="number" min="0.1" step="0.1" value="2.5" /></label>
               <label>Width<input id="furnitureWidth" type="number" min="0.1" step="0.1" value="1.2" /></label>
               <label>Height<input id="furnitureHeight" type="number" min="0.1" step="0.1" value="1.2" /></label>
               <label>Clearance<input id="clearance" type="number" min="0" step="0.05" value="0.1" /></label>
+              <label>Max iterations<input id="maxIterations" type="number" min="1000" max="1000000" step="1000" value="150000" /></label>
+              <label>Solver mode
+                <select id="solverMode">
+                  <option value="rrt">RRT-Connect</option>
+                  <option value="heuristic">Heuristic + RRT corners</option>
+                </select>
+              </label>
             </div>
+            <button id="viewFurniture" type="button">Show furniture in 3D view</button>
             <label class="simulation-check">
               <input id="allowRoll" type="checkbox" />
               Allow roll sampling
@@ -231,7 +249,7 @@
               Manual: ignore entrance edges until fully inside
             </label>
             <div class="simulation-run-actions">
-              <button id="runSimulation" type="button">Use automatic solver</button>
+              <button id="runSimulation" type="button">Run selected solver</button>
               <button id="startManual" type="button">Try manually</button>
             </div>
           </div>
@@ -252,12 +270,42 @@
               <label>Roll<input id="manualRoll" type="range" min="-90" max="90" step="1" value="0" /></label>
             </div>
             <div class="manual-actions">
-              <button id="resetManual" type="button">Reset outside entrance</button>
+              <button id="resetManual" type="button">Reset manual pose</button>
               <button id="clearManualTrail" type="button">Clear trail</button>
+              <button id="startAutoPilot" type="button">Auto Pilot</button>
+              <button id="continueWithSolver" type="button" disabled>Continue with solver</button>
+            </div>
+            <div id="autoPilotPanel" class="auto-pilot-panel" hidden>
+              <div class="auto-pilot-heading">
+                <strong>Auto Pilot</strong>
+                <button id="stopAutoPilot" type="button">Exit Auto Pilot</button>
+              </div>
+              <p id="autoPilotStatus">Pick a furniture edge, then a room edge.</p>
+              <div class="manual-control">
+                <label for="autoPilotTwist">Rotate around direction</label>
+                <output id="autoPilotTwistValue">0°</output>
+                <input id="autoPilotTwist" type="range" min="-180" max="180" step="1" value="0" disabled />
+              </div>
+              <div class="manual-control">
+                <label for="autoPilotOffsetU">Move perpendicular U</label>
+                <output id="autoPilotOffsetUValue">0.00</output>
+                <input id="autoPilotOffsetU" type="range" min="-5" max="5" step="0.05" value="0" disabled />
+              </div>
+              <div class="manual-control">
+                <label for="autoPilotOffsetV">Move perpendicular V</label>
+                <output id="autoPilotOffsetVValue">0.00</output>
+                <input id="autoPilotOffsetV" type="range" min="-5" max="5" step="0.05" value="0" disabled />
+              </div>
+              <div class="manual-control">
+                <label for="autoPilotTravel">Move along direction</label>
+                <output id="autoPilotTravelValue">0.00</output>
+                <input id="autoPilotTravel" type="range" min="-10" max="10" step="0.05" value="0" disabled />
+              </div>
             </div>
             <p id="manualStatus">Align the furniture outside the entrance, move it inside, then reach the exit.</p>
           </div>
           <p id="simulationStatus">Choose two exterior openings.</p>
+          <ol id="heuristicCheckpoints" class="heuristic-checkpoints" hidden></ol>
           <div id="simulationActions" class="simulation-actions" hidden>
             <button id="playRoute" type="button" disabled>Play route</button>
             <label><input id="showRouteFrames" type="checkbox" disabled /> Route frames</label>
@@ -337,6 +385,6 @@
       <p>Green: clear · Yellow: tight clearance · Red: collision</p>
     </section>
 
-    <script type="module" src="./app.js?v=20260607-3"></script>
+    <script type="module" src="./app.js?v=20260607-19"></script>
   </body>
 </html>

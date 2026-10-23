@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import {
+  planHeuristicTraversal,
   planRRTConnect,
   furnitureVertices,
   isEdgeValidThroughOpenings,
@@ -9,8 +10,8 @@ import {
   openingPoseCandidates,
   pointInVolume,
   poseQuaternion,
-} from "./planner.js?v=20260607-3";
-import { createManualModeController } from "./manual.js?v=20260607-3";
+} from "./planner.js?v=20260607-19";
+import { createManualModeController } from "./manual.js?v=20260607-19";
 
 const defaults = {
   aLength: 4,
@@ -20,8 +21,13 @@ const defaults = {
   angleAC: 90,
   angleBC: 90,
 };
+const slantedTemplate = {
+  ...defaults,
+  angleAB: 45,
+};
 const PROJECT_FORMAT = "can-it-fit";
 const PROJECT_VERSION = 1;
+const DEFAULT_MAX_ITERATIONS = 150000;
 
 const faces = [
   [0, 2, 3, 0, 3, 1],
@@ -132,6 +138,9 @@ let animationLastTime = 0;
 let modelConfirmed = false;
 let editorTemporarilyDisabled = false;
 let openingPickRole = "entrance";
+let openingPickArmed = false;
+let openingSignature = "";
+let openingSignatureTime = 0;
 let openingHighlights = [];
 let measurementMode = false;
 const measuredFaces = [];
@@ -151,6 +160,50 @@ furnitureMesh.visible = false;
 furnitureMesh.renderOrder = 4;
 scene.add(furnitureMesh);
 
+const furniturePreview = new THREE.Mesh(
+  new THREE.BoxGeometry(1, 1, 1),
+  new THREE.MeshStandardMaterial({
+    color: 0x2eaf68,
+    roughness: 0.55,
+    transparent: true,
+    opacity: 0.85,
+  }),
+);
+furniturePreview.add(
+  new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+    new THREE.LineBasicMaterial({ color: 0x1b7a47 }),
+  ),
+);
+furniturePreview.renderOrder = 3;
+scene.add(furniturePreview);
+let furniturePreviewKey = "";
+
+function updateFurniturePreview() {
+  const manualActive = manualModeController.isActive();
+  furniturePreview.visible = !furnitureMesh.visible && !manualActive;
+  if (!furniturePreview.visible) return;
+  const { length, width, height } = readFurnitureInputs();
+  if (!(length > 0 && width > 0 && height > 0)) {
+    furniturePreview.visible = false;
+    return;
+  }
+  const bounds = new THREE.Box3();
+  objects.forEach((object) => {
+    worldVertices(object).forEach((vertex) => bounds.expandByPoint(vertex));
+  });
+  if (bounds.isEmpty()) bounds.set(new THREE.Vector3(), new THREE.Vector3());
+  const key = [length, width, height, bounds.min.toArray(), bounds.max.toArray()].join();
+  if (key === furniturePreviewKey) return;
+  furniturePreviewKey = key;
+  furniturePreview.scale.set(length, width, height);
+  furniturePreview.position.set(
+    bounds.max.x + 1 + length / 2,
+    (bounds.min.y + bounds.max.y) / 2,
+    (bounds.min.z + bounds.max.z) / 2,
+  );
+}
+
 const routeMaterial = new THREE.LineBasicMaterial({
   color: 0x176fa6,
   depthTest: false,
@@ -163,6 +216,8 @@ routeLine.renderOrder = 9;
 scene.add(routeLine);
 const routeFrames = new THREE.Group();
 scene.add(routeFrames);
+const checkpointFrames = new THREE.Group();
+scene.add(checkpointFrames);
 const measurementLine = new THREE.Line(
   new THREE.BufferGeometry(),
   new THREE.LineBasicMaterial({
@@ -194,6 +249,7 @@ const manualModeController = createManualModeController({
   },
   setFurniturePose,
   faceQuads,
+  edgePairs,
   openingPoseCandidates,
   furnitureVertices,
   isEdgeValidThroughOpenings,
@@ -296,12 +352,14 @@ function serializeProject() {
     modelConfirmed,
     entranceId: document.querySelector("#entranceFace").value,
     exitId: document.querySelector("#exitFace").value,
-    openingsConfirmed: !document.querySelector("#furnitureStage").hidden,
+    openingsConfirmed: modelConfirmed,
     furniture: {
       length: Number(document.querySelector("#furnitureLength").value),
       width: Number(document.querySelector("#furnitureWidth").value),
       height: Number(document.querySelector("#furnitureHeight").value),
       clearance: Number(document.querySelector("#clearance").value),
+      maxIterations: Number(document.querySelector("#maxIterations").value),
+      solverMode: document.querySelector("#solverMode").value,
       allowRoll: document.querySelector("#allowRoll").checked,
     },
     preferences: {
@@ -462,6 +520,10 @@ function restoreProject(data) {
   document.querySelector("#furnitureWidth").value = furniture.width ?? 1.2;
   document.querySelector("#furnitureHeight").value = furniture.height ?? 1.2;
   document.querySelector("#clearance").value = furniture.clearance ?? 0.1;
+  document.querySelector("#maxIterations").value =
+    furniture.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+  document.querySelector("#solverMode").value =
+    furniture.solverMode ?? "rrt";
   document.querySelector("#allowRoll").checked = Boolean(furniture.allowRoll);
 
   const restoredSelection =
@@ -475,30 +537,35 @@ function restoreProject(data) {
   }
   controls.update();
 
-  if (data.modelConfirmed) {
+  updateOpeningOptions();
+  document.querySelector("#entranceFace").value = data.entranceId ?? "";
+  document.querySelector("#exitFace").value = data.exitId ?? "";
+  if (document.querySelector("#entranceFace").value !== (data.entranceId ?? "")) {
+    document.querySelector("#entranceFace").value = "";
+  }
+  if (document.querySelector("#exitFace").value !== (data.exitId ?? "")) {
+    document.querySelector("#exitFace").value = "";
+  }
+  const openingsValid =
+    document.querySelector("#entranceFace").value &&
+    document.querySelector("#exitFace").value &&
+    document.querySelector("#entranceFace").value !==
+      document.querySelector("#exitFace").value;
+  if (data.modelConfirmed && openingsValid) {
     modelConfirmed = true;
-    updateOpeningOptions();
-    document.querySelector("#entranceFace").value = data.entranceId ?? "";
-    document.querySelector("#exitFace").value = data.exitId ?? "";
     document.querySelector("#confirmModel").hidden = true;
     document.querySelector("#editModel").hidden = false;
-    document.querySelector("#openingStage").hidden = false;
-    document.querySelector("#furnitureStage").hidden =
-      !data.openingsConfirmed;
     setHallwayTransparency(true);
     document.querySelector("#workflowStatus").textContent =
-      data.openingsConfirmed
-        ? "Project restored. Furniture settings are ready."
-        : "Project restored. Choose the entrance and exit.";
+      "Project restored. Furniture settings are ready.";
   } else {
     document.querySelector("#confirmModel").hidden = false;
     document.querySelector("#editModel").hidden = true;
-    document.querySelector("#openingStage").hidden = true;
-    document.querySelector("#furnitureStage").hidden = true;
     setHallwayTransparency(false);
     document.querySelector("#workflowStatus").textContent =
       "Project restored in editing mode.";
   }
+  refreshOpeningHighlights();
   document.querySelector("#simulationActions").hidden = true;
   document.querySelector("#topView").hidden = true;
   applyWorkflowLocks();
@@ -689,6 +756,42 @@ function setFieldValue(key, rawValue) {
   updateReadout();
 }
 
+function applyShapeTemplate(params, name) {
+  if (
+    !selectedObject ||
+    attachmentsFor(selectedObject).length ||
+    modelConfirmed
+  ) {
+    return;
+  }
+  clearMeasurement();
+  clearRouteVisualization();
+  const geometry = calculateGeometry(params);
+  if (!geometry) return;
+  const oldGeometry = {
+    vectors: selectedObject.vectors,
+    vertices: selectedObject.vertices,
+  };
+  applyGeometry(selectedObject, geometry);
+  if (
+    objects.some(
+      (other) =>
+        other !== selectedObject &&
+        objectsOverlap(selectedObject, other),
+    )
+  ) {
+    applyGeometry(selectedObject, oldGeometry);
+    document.querySelector("#angleError").textContent =
+      `${name} is blocked because it would overlap another object.`;
+    return;
+  }
+  selectedObject.params = { ...params };
+  syncFields(selectedObject.params);
+  updateReadout();
+  document.querySelector("#angleError").textContent =
+    `${name} applied: AB 45°, AC 90°, BC 90°.`;
+}
+
 function syncFields(params) {
   syncingFields = true;
   Object.entries(fields).forEach(([key, field]) => {
@@ -833,7 +936,7 @@ function updateAttachmentFaceVisibility() {
     attachment.a.materials[attachment.faceA].visible = false;
     attachment.b.materials[attachment.faceB].visible = false;
   });
-  if (modelConfirmed && !document.querySelector("#furnitureStage").hidden) {
+  if (modelConfirmed) {
     const openingIds = [
       document.querySelector("#entranceFace").value,
       document.querySelector("#exitFace").value,
@@ -857,6 +960,8 @@ function updateShapeControlState() {
   document.querySelectorAll("#controls input, #reset").forEach((element) => {
     element.disabled = Boolean(attached || modelConfirmed);
   });
+  document.querySelector("#applySlantedTemplate").disabled =
+    Boolean(attached || modelConfirmed);
   document.querySelector("#angleError").textContent = modelConfirmed
     ? "Model confirmed. Choose Edit model to make geometry changes."
     : attached
@@ -955,43 +1060,65 @@ function buildEnvironment() {
     c: object.vectors[2].clone().applyQuaternion(object.root.quaternion),
   }));
   const openings = [];
+  const faceOpeningData = (object, faceIndex) => {
+    const frame = outwardFaceFrame(object, faceIndex);
+    const vertices = faceQuads[faceIndex].map((vertexIndex) =>
+      object.vertices[vertexIndex]
+        .clone()
+        .applyQuaternion(object.root.quaternion)
+        .add(object.root.position),
+    );
+    const family = faceIndex < 2 ? 2 : faceIndex < 4 ? 1 : 0;
+    const travelDirection = object.vectors[family]
+      .clone()
+      .applyQuaternion(object.root.quaternion)
+      .normalize()
+      .multiplyScalar(faceIndex % 2 === 0 ? 1 : -1);
+    return {
+      object,
+      faceIndex,
+      center: frame.center,
+      normal: frame.normal,
+      u: frame.u,
+      v: frame.v,
+      vertices,
+      travelDirection,
+      uLimit: Math.max(
+        ...vertices.map((vertex) =>
+          Math.abs(vertex.clone().sub(frame.center).dot(frame.u))),
+      ),
+      vLimit: Math.max(
+        ...vertices.map((vertex) =>
+          Math.abs(vertex.clone().sub(frame.center).dot(frame.v))),
+      ),
+      polygon: vertices.map((vertex) => {
+        const offset = vertex.clone().sub(frame.center);
+        return {
+          u: offset.dot(frame.u),
+          v: offset.dot(frame.v),
+        };
+      }),
+    };
+  };
   members.forEach((object) => {
     for (let faceIndex = 0; faceIndex < faceQuads.length; faceIndex += 1) {
       if (internalFaces.has(`${object.id}:${faceIndex}`)) continue;
-      const frame = outwardFaceFrame(object, faceIndex);
-      const openingVertices = faceQuads[faceIndex].map((vertexIndex) =>
-        object.vertices[vertexIndex]
-          .clone()
-          .applyQuaternion(object.root.quaternion)
-          .add(object.root.position),
-      );
+      const opening = faceOpeningData(object, faceIndex);
       openings.push({
+        ...opening,
         id: `${object.id}:${faceIndex}`,
-        object,
-        faceIndex,
         name: `Object ${object.id} · ${faceNames[faceIndex]}`,
-        center: frame.center,
-        normal: frame.normal,
-        u: frame.u,
-        v: frame.v,
-        uLimit: Math.max(
-          ...openingVertices.map((vertex) =>
-            Math.abs(vertex.clone().sub(frame.center).dot(frame.u))),
-        ),
-        vLimit: Math.max(
-          ...openingVertices.map((vertex) =>
-            Math.abs(vertex.clone().sub(frame.center).dot(frame.v))),
-        ),
-        polygon: openingVertices.map((vertex) => {
-          const offset = vertex.clone().sub(frame.center);
-          return {
-            u: offset.dot(frame.u),
-            v: offset.dot(frame.v),
-          };
-        }),
       });
     }
   });
+  const connections = attachments
+    .filter((attachment) =>
+      memberSet.has(attachment.a) && memberSet.has(attachment.b))
+    .map((attachment) => ({
+      id: attachment.id,
+      a: faceOpeningData(attachment.a, attachment.faceA),
+      b: faceOpeningData(attachment.b, attachment.faceB),
+    }));
 
   const bounds = new THREE.Box3();
   members.forEach((object) => {
@@ -1001,6 +1128,7 @@ function buildEnvironment() {
     volumes,
     exteriorWalls: openings,
     openings,
+    connections,
     bounds,
   };
 }
@@ -1213,9 +1341,61 @@ function pickOpeningFromSurface(hit) {
   } else {
     openingPickRole = "entrance";
     document.querySelector("#simulationStatus").textContent =
-      `Exit selected: ${opening.name}. Click Confirm entrance & exit.`;
+      `Exit selected: ${opening.name}. Click Confirm 3D model when ready.`;
   }
   refreshOpeningHighlights();
+}
+
+function setOpeningPickArmed(armed) {
+  openingPickArmed = armed;
+  const button = document.querySelector("#pickOpenings");
+  button.textContent = armed
+    ? "Click entrance, then exit (click to stop)"
+    : "Pick faces in 3D view";
+  button.classList.toggle("active", armed);
+  if (armed) {
+    openingPickRole = "entrance";
+    document.querySelector("#simulationStatus").textContent =
+      "Click an exterior surface for the entrance, then one for the exit.";
+  }
+}
+
+function modelSignature() {
+  return JSON.stringify([
+    objects.map((object) => [
+      object.id,
+      object.root.position.toArray(),
+      object.root.quaternion.toArray(),
+      object.vertices.map((vertex) => vertex.toArray()),
+    ]),
+    attachments.map((attachment) => [
+      attachment.id, attachment.faceA, attachment.faceB,
+    ]),
+    selectedObject?.id ?? null,
+  ]);
+}
+
+function refreshOpeningsWhileEditing(now) {
+  if (modelConfirmed || joinState || now - openingSignatureTime < 250) return;
+  openingSignatureTime = now;
+  const signature = modelSignature();
+  if (signature === openingSignature) return;
+  openingSignature = signature;
+  updateOpeningOptions();
+}
+
+function viewFurniture() {
+  updateFurniturePreview();
+  if (!furniturePreview.visible) return;
+  const size = Math.max(
+    furniturePreview.scale.x,
+    furniturePreview.scale.y,
+    furniturePreview.scale.z,
+  );
+  const direction = camera.position.clone().sub(controls.target).normalize();
+  controls.target.copy(furniturePreview.position);
+  camera.position.copy(furniturePreview.position).addScaledVector(direction, size * 3 + 2);
+  controls.update();
 }
 
 function refreshOpeningHighlights() {
@@ -1225,7 +1405,6 @@ function refreshOpeningHighlights() {
     scene.remove(highlight);
   });
   openingHighlights = [];
-  if (!modelConfirmed || document.querySelector("#openingStage").hidden) return;
 
   const environment = buildEnvironment();
   [
@@ -1390,6 +1569,10 @@ document.querySelector("#addObject").addEventListener("click", () => {
     x += source.params.aLength + 0.5;
   } while (!candidate);
   createSolid(source.params, position);
+});
+
+document.querySelector("#applySlantedTemplate").addEventListener("click", () => {
+  applyShapeTemplate(slantedTemplate, "45° two-face box");
 });
 
 document.querySelector("#deleteObject").addEventListener("click", () => {
@@ -1704,17 +1887,25 @@ function setEditorDisabled(disabled) {
 function applyWorkflowLocks() {
   const modelLocked = editorTemporarilyDisabled || modelConfirmed;
   document.querySelectorAll(
-    "#controls input, #addObject, #deleteObject, #reset, #showAnnotations, #startJoin, " +
-      "#attachmentSelect, #editAttachment, #detachAttachment, .group-rotation button",
+    "#controls input, #addObject, #deleteObject, #reset, #applySlantedTemplate, " +
+      "#showAnnotations, #startJoin, #attachmentSelect, #editAttachment, " +
+      "#detachAttachment, .group-rotation button",
   ).forEach((element) => {
     element.disabled = modelLocked;
   });
   document.querySelectorAll(
-    "#runSimulation, #entranceFace, #exitFace, #confirmOpenings, " +
-      ".furniture-grid input, #allowRoll, #startManual",
+    "#furnitureStage input, #furnitureStage select, #viewFurniture",
   ).forEach((element) => {
     element.disabled = editorTemporarilyDisabled;
   });
+  document.querySelectorAll("#runSimulation, #startManual").forEach((element) => {
+    element.disabled = editorTemporarilyDisabled || !modelConfirmed;
+  });
+  document.querySelectorAll("#entranceFace, #exitFace, #pickOpenings").forEach(
+    (element) => {
+      element.disabled = editorTemporarilyDisabled || modelConfirmed;
+    },
+  );
   if (objects.length <= 1) {
     document.querySelector("#deleteObject").disabled = true;
   }
@@ -1801,25 +1992,28 @@ function confirmModel() {
       "The model needs at least two exterior faces for an entrance and exit.";
     return;
   }
+  const entrance = document.querySelector("#entranceFace").value;
+  const exit = document.querySelector("#exitFace").value;
+  if (!entrance || !exit || entrance === exit) {
+    document.querySelector("#workflowStatus").textContent =
+      "Choose two different exterior openings for the entrance and exit first.";
+    return;
+  }
   modelConfirmed = true;
+  setOpeningPickArmed(false);
   clearRouteVisualization();
   setHallwayTransparency(true);
-  updateOpeningOptions();
-  document.querySelector("#entranceFace").value = "";
-  document.querySelector("#exitFace").value = "";
-  openingPickRole = "entrance";
   refreshOpeningHighlights();
   applyWorkflowLocks();
+  updateAttachmentFaceVisibility();
   document.querySelector("#confirmModel").hidden = true;
   document.querySelector("#editModel").hidden = false;
-  document.querySelector("#openingStage").hidden = false;
-  document.querySelector("#furnitureStage").hidden = true;
   document.querySelector("#simulationActions").hidden = true;
   document.querySelector("#topView").hidden = true;
   document.querySelector("#workflowStatus").textContent =
-    "Model locked. Step 1: choose the entrance and exit.";
+    "Model locked. Set the furniture size and run the simulation.";
   document.querySelector("#simulationStatus").textContent =
-    "Choose two different exterior openings.";
+    "Furniture dimensions use the same units as the hallway model.";
 }
 
 function editModel() {
@@ -1830,32 +2024,14 @@ function editModel() {
   applyWorkflowLocks();
   document.querySelector("#confirmModel").hidden = false;
   document.querySelector("#editModel").hidden = true;
-  document.querySelector("#openingStage").hidden = true;
-  document.querySelector("#furnitureStage").hidden = true;
   document.querySelector("#simulationActions").hidden = true;
   document.querySelector("#topView").hidden = true;
   document.querySelector("#routeVideoPanel").hidden = true;
+  updateOpeningOptions();
   updateAttachmentFaceVisibility();
   refreshOpeningHighlights();
   document.querySelector("#workflowStatus").textContent =
     "Model editing enabled. Confirm again when the hallway is finished.";
-}
-
-function confirmOpenings() {
-  const entrance = document.querySelector("#entranceFace").value;
-  const exit = document.querySelector("#exitFace").value;
-  if (!entrance || !exit || entrance === exit) {
-    document.querySelector("#simulationStatus").textContent =
-      "Choose two different exterior openings.";
-    return;
-  }
-  document.querySelector("#furnitureStage").hidden = false;
-  document.querySelector("#workflowStatus").textContent =
-    "Step 2: enter the furniture dimensions and run the simulation.";
-  document.querySelector("#simulationStatus").textContent =
-    "Furniture dimensions use the same units as the hallway model.";
-  updateAttachmentFaceVisibility();
-  refreshOpeningHighlights();
 }
 
 function readFurnitureInputs() {
@@ -1877,9 +2053,11 @@ function selectedSimulationEnvironment() {
   return entrance && exit ? { ...environment, entrance, exit } : null;
 }
 
-async function runSimulation() {
+async function runSimulation(startPose = null) {
   if (joinState || !selectedObject) return;
-  if (manualModeController.isActive()) manualModeController.stopManualChallenge();
+  if (manualModeController.isActive()) {
+    manualModeController.stopManualChallenge();
+  }
   const status = document.querySelector("#simulationStatus");
   const runButton = document.querySelector("#runSimulation");
   const environment = buildEnvironment();
@@ -1904,41 +2082,108 @@ async function runSimulation() {
   simulationEnvironment = { ...environment, entrance, exit };
   simulationFurniture = furniture;
   runButton.disabled = true;
-  status.textContent = "Planning 3D route…";
+  const solverMode = startPose
+    ? "rrt"
+    : document.querySelector("#solverMode").value;
+  status.textContent = startPose
+    ? "Planning from the assisted inside pose…"
+    : solverMode === "heuristic"
+      ? "Building straight heuristic route…"
+      : "Planning 3D route…";
   const sceneSize = environment.bounds.getSize(new THREE.Vector3());
   const positionStep = Math.max(
     0.08,
     Math.min(sceneSize.x, sceneSize.y, sceneSize.z) / 28,
   );
-  const result = await planRRTConnect({
+  const maxIterationsInput = document.querySelector("#maxIterations");
+  const requestedMaxIterations = Number(maxIterationsInput.value);
+  const maxIterations = Number.isFinite(requestedMaxIterations)
+    ? Math.min(1000000, Math.max(1000, Math.round(requestedMaxIterations)))
+    : DEFAULT_MAX_ITERATIONS;
+  maxIterationsInput.value = String(maxIterations);
+  const solverOptions = {
     environment,
     furniture,
     entrance,
     exit,
     config: {
-      maxIterations: 50000,
+      maxIterations,
       positionStep,
       angleStep: THREE.MathUtils.degToRad(4),
       goalBias: 0.18,
       clearance: Number(document.querySelector("#clearance").value) || 0,
       allowRoll: document.querySelector("#allowRoll").checked,
       animationStep: positionStep / 2,
+      openingPoseCount: 2000,
     },
-    onProgress: (iteration, nodes) => {
-      status.textContent =
-        `Planning… ${iteration.toLocaleString()} iterations, ${nodes.toLocaleString()} nodes`;
-    },
-  });
+  };
+  const result = solverMode === "heuristic"
+    ? await planHeuristicTraversal({
+      ...solverOptions,
+      onProgress: (progress) => {
+        if (progress.phase === "hybrid-rrt") {
+          status.textContent =
+            `RRT corner ${progress.transition}: ` +
+            `${progress.iteration.toLocaleString()} / ` +
+            `${progress.maxIterations.toLocaleString()} iterations`;
+        }
+      },
+    })
+    : await planRRTConnect({
+      ...solverOptions,
+      startPose,
+      onProgress: (progress) => {
+        if (progress.phase === "opening") {
+          status.textContent =
+            `Sampling opening poses… ${progress.checked.toLocaleString()} / ` +
+            `${progress.total.toLocaleString()} orientations, ` +
+            `${progress.candidates.toLocaleString()} candidates`;
+          return;
+        }
+        status.textContent =
+          `Planning… ${progress.iteration.toLocaleString()} / ` +
+          `${progress.maxIterations.toLocaleString()} iterations, ` +
+          `${progress.nodes.toLocaleString()} nodes`;
+      },
+    });
   runButton.disabled = false;
   simulationResult = result;
+  showHeuristicCheckpoints(result.checkpoints ?? []);
   if (!result.possible) {
+    if (result.path?.length) {
+      status.textContent = `${result.failureReason} Inspect the failed checkpoint.`;
+      showRoute(result.path);
+      setSimulationActionsEnabled(true);
+      setFurniturePose(result.path[0]);
+      fitTopCamera(environment.bounds);
+      fitRouteVideoCamera(environment.bounds);
+      document.querySelector("#simulationActions").hidden = false;
+      document.querySelector("#topView").hidden = false;
+      document.querySelector("#routeVideoPanel").hidden = false;
+      animationPlaying = true;
+      setHallwayTransparency(true);
+      animationLastTime = performance.now();
+      document.querySelector("#playRoute").textContent = "Pause route";
+      document.querySelector("#videoPlayRoute").textContent = "Pause";
+      updateHeuristicCheckpointState(0);
+      return;
+    }
+    const shownCandidates = showBestEntrancePoses(
+      result.bestEntrancePoses ?? [],
+    );
+    const searchHint = result.failureStage
+      ? " Check the opening, furniture dimensions, clearance, and roll setting."
+      : " Increase max iterations or rerun the probabilistic search.";
     status.textContent =
-      `${result.failureReason} Try smaller clearance or rerun the probabilistic search.`;
+      `${result.failureReason}` +
+      (shownCandidates ? " Best entrance poses are shown." : "") +
+      searchHint;
     return;
   }
 
-  status.textContent =
-    `Route found: ${result.path.length} collision-free animation frames.`;
+  status.textContent = result.solver === "heuristic"
+    ? `Heuristic route completed: ${result.path.length} animation frames.`
+    : `Route found: ${result.path.length} collision-free animation frames.`;
   showRoute(result.path);
   setSimulationActionsEnabled(true);
   setFurniturePose(result.path[0]);
@@ -1952,6 +2197,7 @@ async function runSimulation() {
   animationLastTime = performance.now();
   document.querySelector("#playRoute").textContent = "Pause route";
   document.querySelector("#videoPlayRoute").textContent = "Pause";
+  updateHeuristicCheckpointState(0);
 }
 
 function clearRouteVisualization() {
@@ -1962,7 +2208,11 @@ function clearRouteVisualization() {
   routeLine.visible = false;
   routeLine.geometry.dispose();
   routeLine.geometry = new THREE.BufferGeometry();
-  routeFrames.clear();
+  clearRouteFrames();
+  clearCheckpointFrames();
+  const checkpointList = document.querySelector("#heuristicCheckpoints");
+  checkpointList.replaceChildren();
+  checkpointList.hidden = true;
   document.querySelector("#routeVideoPanel").hidden = true;
   document.querySelector("#simulationActions").hidden = true;
   document.querySelector("#topView").hidden = true;
@@ -1999,30 +2249,79 @@ function showRoute(path) {
   rebuildRouteFrames();
 }
 
+function showBestEntrancePoses(poses) {
+  clearRouteFrames();
+  if (!poses.length) return false;
+  const geometry = new THREE.BoxGeometry(
+    simulationFurniture.length,
+    simulationFurniture.width,
+    simulationFurniture.height,
+  );
+  const material = new THREE.MeshBasicMaterial({
+    color: 0xe29c32,
+    wireframe: true,
+    transparent: true,
+    opacity: 0.5,
+    depthTest: false,
+  });
+  poses.forEach((pose) => {
+    const frame = new THREE.Mesh(geometry, material);
+    frame.position.set(pose.x, pose.y, pose.z);
+    frame.quaternion.copy(poseQuaternion(pose));
+    frame.renderOrder = 10;
+    routeFrames.add(frame);
+  });
+  setHallwayTransparency(true);
+  return true;
+}
+
 function setFurniturePose(pose, clearanceOverride = null) {
   furnitureMesh.position.set(pose.x, pose.y, pose.z);
   furnitureMesh.quaternion.copy(poseQuaternion(pose));
   const clearance = clearanceOverride ??
     (Number(document.querySelector("#clearance").value) || 0);
-  const valid = isPoseValid(
+  const inside = isPoseValid(
     pose,
     simulationFurniture,
     simulationEnvironment,
     clearance,
   );
-  const roomy = valid && isPoseValid(
+  const portalValid =
+    !inside &&
+    simulationEnvironment?.entrance &&
+    simulationEnvironment?.exit &&
+    isPoseValidThroughOpenings(
+      pose,
+      simulationFurniture,
+      simulationEnvironment,
+      clearance,
+      [
+        {
+          ...simulationEnvironment.entrance,
+          unboundedExterior: true,
+        },
+        {
+          ...simulationEnvironment.exit,
+          unboundedExterior: true,
+        },
+      ],
+    );
+  const valid = inside || portalValid;
+  const roomy = inside && isPoseValid(
     pose,
     simulationFurniture,
     simulationEnvironment,
     clearance * 1.75 + 0.02,
   );
-  furnitureMaterial.color.setHex(valid ? (roomy ? 0x2eaf68 : 0xe6b83f) : 0xd94d45);
+  furnitureMaterial.color.setHex(
+    valid ? (roomy ? 0x2eaf68 : 0xe6b83f) : 0xd94d45,
+  );
 }
 
 function rebuildRouteFrames() {
-  routeFrames.clear();
+  clearRouteFrames();
   if (
-    !simulationResult?.possible ||
+    !simulationResult?.path?.length ||
     !document.querySelector("#showRouteFrames").checked
   ) {
     return;
@@ -2046,6 +2345,101 @@ function rebuildRouteFrames() {
     frame.quaternion.copy(poseQuaternion(path[index]));
     routeFrames.add(frame);
   }
+}
+
+function showHeuristicCheckpoints(checkpoints) {
+  clearCheckpointFrames();
+  const list = document.querySelector("#heuristicCheckpoints");
+  list.replaceChildren();
+  list.hidden = !checkpoints.length;
+  if (!checkpoints.length) return;
+  checkpoints.forEach((checkpoint, checkpointIndex) => {
+    const item = document.createElement("li");
+    item.dataset.checkpointIndex = String(checkpointIndex);
+    item.dataset.pathIndex = String(checkpoint.index);
+    item.classList.toggle("is-failed", checkpoint.status === "failed");
+    const title = document.createElement("strong");
+    title.textContent = checkpoint.label;
+    const detail = document.createElement("span");
+    detail.textContent = ` ${checkpoint.details}`;
+    item.append(title, detail);
+    item.addEventListener("click", () => {
+      animationPlaying = false;
+      animationFrameIndex = checkpoint.index;
+      document.querySelector("#routeScrub").value = String(checkpoint.index);
+      document.querySelector("#videoRouteScrub").value =
+        String(checkpoint.index);
+      document.querySelector("#playRoute").textContent = "Play route";
+      document.querySelector("#videoPlayRoute").textContent = "Play";
+      setFurniturePose(checkpoint.pose);
+      updateHeuristicCheckpointState(checkpoint.index);
+    });
+    list.append(item);
+
+    const geometry = new THREE.BoxGeometry(
+      simulationFurniture.length,
+      simulationFurniture.width,
+      simulationFurniture.height,
+    );
+    const material = new THREE.MeshBasicMaterial({
+      color: checkpoint.status === "failed" ? 0xc54b42 : 0x257ca3,
+      wireframe: true,
+      transparent: true,
+      opacity: checkpoint.status === "failed" ? 0.75 : 0.38,
+      depthTest: false,
+    });
+    const frame = new THREE.Mesh(geometry, material);
+    frame.position.set(
+      checkpoint.pose.x,
+      checkpoint.pose.y,
+      checkpoint.pose.z,
+    );
+    frame.quaternion.copy(poseQuaternion(checkpoint.pose));
+    frame.renderOrder = 10;
+    checkpointFrames.add(frame);
+  });
+}
+
+function updateHeuristicCheckpointState(pathIndex) {
+  const items = [
+    ...document.querySelectorAll("#heuristicCheckpoints li"),
+  ];
+  let active = -1;
+  items.forEach((item, index) => {
+    if (Number(item.dataset.pathIndex) <= pathIndex) active = index;
+  });
+  items.forEach((item, index) => {
+    item.classList.toggle("is-active", index === active);
+  });
+  if (active >= 0 && simulationResult?.checkpoints?.[active]) {
+    const checkpoint = simulationResult.checkpoints[active];
+    document.querySelector("#simulationStatus").textContent =
+      `${checkpoint.label}: ${checkpoint.details}`;
+  }
+}
+
+function clearRouteFrames() {
+  clearFrameGroup(routeFrames);
+}
+
+function clearCheckpointFrames() {
+  clearFrameGroup(checkpointFrames);
+}
+
+function clearFrameGroup(group) {
+  const geometries = new Set();
+  const materials = new Set();
+  group.children.forEach((frame) => {
+    if (frame.geometry) geometries.add(frame.geometry);
+    if (Array.isArray(frame.material)) {
+      frame.material.forEach((material) => materials.add(material));
+    } else if (frame.material) {
+      materials.add(frame.material);
+    }
+  });
+  group.clear();
+  geometries.forEach((geometry) => geometry.dispose());
+  materials.forEach((material) => material.dispose());
 }
 
 function fitTopCamera(bounds) {
@@ -2079,7 +2473,7 @@ function fitRouteVideoCamera(bounds) {
 }
 
 function toggleRoutePlayback() {
-  if (!simulationResult?.possible) return;
+  if (!simulationResult?.path?.length) return;
   animationPlaying = !animationPlaying;
   setHallwayTransparency(modelConfirmed);
   animationLastTime = performance.now();
@@ -2131,7 +2525,9 @@ document.querySelectorAll(".group-rotation button").forEach((button) => {
     rotateSelectedGroup(button.dataset.axis, Number(button.dataset.angle));
   });
 });
-document.querySelector("#runSimulation").addEventListener("click", runSimulation);
+document.querySelector("#runSimulation").addEventListener("click", () => {
+  runSimulation();
+});
 document.querySelector("#measureSurfaces").addEventListener("click", toggleMeasurementMode);
 document.querySelector("#clearMeasurement").addEventListener("click", () => {
   measurementMode = false;
@@ -2178,8 +2574,37 @@ document.querySelector("#resetManual").addEventListener("click", () => {
 document.querySelector("#clearManualTrail").addEventListener("click", () => {
   manualModeController.clearManualTrail();
 });
+document.querySelector("#continueWithSolver").addEventListener("click", () => {
+  const startPose = manualModeController.getInsidePose();
+  if (!startPose) {
+    document.querySelector("#manualStatus").textContent =
+      "Move the furniture fully inside before handing off to the solver.";
+    return;
+  }
+  manualModeController.stopManualChallenge();
+  runSimulation(startPose);
+});
 document.querySelector("#manualIgnoreEntrance").addEventListener("change", () => {
   manualModeController.updateEntranceOption();
+});
+document.querySelector("#startAutoPilot").addEventListener("click", () => {
+  manualModeController.startAutoPilot();
+});
+document.querySelector("#stopAutoPilot").addEventListener("click", () => {
+  manualModeController.stopAutoPilot();
+});
+[
+  ["autoPilotTwist", "twist"],
+  ["autoPilotOffsetU", "offsetU"],
+  ["autoPilotOffsetV", "offsetV"],
+  ["autoPilotTravel", "travel"],
+].forEach(([id, key]) => {
+  document.querySelector(`#${id}`).addEventListener("input", (event) => {
+    manualModeController.applyAutoPilotControl(
+      key,
+      Number(event.target.value),
+    );
+  });
 });
 document.querySelector("#playRoute").addEventListener("click", toggleRoutePlayback);
 document.querySelector("#videoPlayRoute").addEventListener("click", toggleRoutePlayback);
@@ -2187,7 +2612,10 @@ document.querySelector("#showRouteFrames").addEventListener("change", rebuildRou
 document.querySelector("#exportRoute").addEventListener("click", exportRoute);
 document.querySelector("#confirmModel").addEventListener("click", confirmModel);
 document.querySelector("#editModel").addEventListener("click", editModel);
-document.querySelector("#confirmOpenings").addEventListener("click", confirmOpenings);
+document.querySelector("#pickOpenings").addEventListener("click", () => {
+  setOpeningPickArmed(!openingPickArmed);
+});
+document.querySelector("#viewFurniture").addEventListener("click", viewFurniture);
 document.querySelector("#closeRouteVideo").addEventListener("click", () => {
   animationPlaying = false;
   setHallwayTransparency(modelConfirmed);
@@ -2196,7 +2624,7 @@ document.querySelector("#closeRouteVideo").addEventListener("click", () => {
   document.querySelector("#routeVideoPanel").hidden = true;
 });
 function scrubRoute(event) {
-  if (!simulationResult?.possible) return;
+  if (!simulationResult?.path?.length) return;
   animationPlaying = false;
   setHallwayTransparency(modelConfirmed);
   document.querySelector("#playRoute").textContent = "Play route";
@@ -2205,6 +2633,7 @@ function scrubRoute(event) {
   document.querySelector("#routeScrub").value = String(animationFrameIndex);
   document.querySelector("#videoRouteScrub").value = String(animationFrameIndex);
   setFurniturePose(simulationResult.path[animationFrameIndex]);
+  updateHeuristicCheckpointState(animationFrameIndex);
 }
 document.querySelector("#routeScrub").addEventListener("input", scrubRoute);
 document.querySelector("#videoRouteScrub").addEventListener("input", scrubRoute);
@@ -2343,15 +2772,13 @@ renderer.domElement.addEventListener("pointerdown", (event) => {
     return;
   }
 
+  if (!modelConfirmed && openingPickArmed) {
+    pickOpeningFromSurface(hits[0]);
+    event.preventDefault();
+    return;
+  }
+
   if (modelConfirmed) {
-    if (
-      !document.querySelector("#openingStage").hidden &&
-      document.querySelector("#furnitureStage").hidden
-    ) {
-      pickOpeningFromSurface(hits[0]);
-      event.preventDefault();
-      return;
-    }
     selectObject(hits[0].object.userData.object);
     event.preventDefault();
     return;
@@ -2510,10 +2937,12 @@ window.addEventListener("resize", resize);
 
 createSolid(defaults);
 resize();
+applyWorkflowLocks();
+updateOpeningOptions();
 
 function animate() {
   const now = performance.now();
-  if (animationPlaying && simulationResult?.possible) {
+  if (animationPlaying && simulationResult?.path?.length) {
     if (now - animationLastTime >= 120) {
       animationLastTime = now;
       animationFrameIndex += 1;
@@ -2527,8 +2956,11 @@ function animate() {
       document.querySelector("#routeScrub").value = String(animationFrameIndex);
       document.querySelector("#videoRouteScrub").value = String(animationFrameIndex);
       setFurniturePose(simulationResult.path[animationFrameIndex]);
+      updateHeuristicCheckpointState(animationFrameIndex);
     }
   }
+  refreshOpeningsWhileEditing(now);
+  updateFurniturePreview();
   controls.update();
   routeVideoControls.update();
   renderer.render(scene, camera);
