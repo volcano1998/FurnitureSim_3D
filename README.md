@@ -5,7 +5,7 @@
 ### 👉 [**Launch the app**](https://volcano1998.github.io/FurnitureSim_3D/) &nbsp;·&nbsp; 🎞️ [**Watch the slides**](https://volcano1998.github.io/FurnitureSim_3D/slides/)
 
 <p align="center">
-  <img src="slides/img/s4-route.jpg" alt="Can It Fit? showing a sofa-sized box travelling through a hallway" width="860">
+  <img src="slides/img/stairs-route.jpg" alt="Can It Fit? showing a sofa-sized box travelling up a staircase between two hallways" width="860">
 </p>
 
 Runs entirely in your browser. No install, no account, no build step.
@@ -24,16 +24,18 @@ Runs entirely in your browser. No install, no account, no build step.
 
 ## Try it in 2 minutes
 
-1. **Build**: set the room lengths to `8 · 2.4 · 2.4` to make a hallway.
-2. **Entrance & exit**: press *Pick faces in 3D view*, click one end then the other, and press *Confirm 3D model*.
-3. **Furniture**: enter `2.5 · 1.2 · 1.2` with clearance `0.1`.
-4. **Solve**: try it manually, then press *Run selected solver*.
+Try the built-in example: a hallway, a flight of stairs and another hallway, made from three blocks and two connections.
+
+1. **Load the example**: download [`examples/stairs-and-hallway.json`](examples/stairs-and-hallway.json), open the app, and press **Load**. The staircase appears, with the entrance and exit already chosen.
+2. **Build your own**: stretch blocks with the length sliders, tilt them with the angle sliders, press **+ Add object**, then **Connect two objects** and rotate or slide them until they line up. Any shape you can make from blocks works.
+3. **Furniture**: enter its length, width and height (try `2.5 · 1.2 · 1.2`) with clearance `0.1`.
+4. **Solve**: press **Try manually** and drag the furniture through, or press **Try auto-solver**.
 
 Changed your mind? Click any earlier step in the progress bar to go back and edit.
 
 <p align="center">
-  <img src="slides/img/s2-openings.jpg" alt="Choosing the entrance and exit" width="420">
-  <img src="slides/img/s4-manual.jpg" alt="Manual mode" width="420">
+  <img src="slides/img/stairs-openings.jpg" alt="Entrance and exit chosen on the staircase model" width="420">
+  <img src="slides/img/stairs-manual.jpg" alt="Manual mode: the furniture starts outside the entrance" width="420">
 </p>
 
 ## How it works
@@ -46,7 +48,7 @@ Changed your mind? Click any earlier step in the progress bar to go back and edi
 
 RRT-Connect is probabilistic: finding a route proves the furniture fits, but failing to find one doesn't prove it can't. Run it again or raise the iteration limit. The app never "fixes" a failure by silently shrinking the clearance.
 
-The slides walk through all of this with diagrams: [**open the slides**](https://volcano1998.github.io/FurnitureSim_3D/slides/) or [download the PowerPoint with speaker notes](slides/CanItFit.pptx).
+The slides walk through all of this with diagrams: [**open the slides**](https://volcano1998.github.io/FurnitureSim_3D/slides/) or [download the PowerPoint with speaker notes](slides/CanItFit_v5.pptx).
 
 ## Run it locally
 

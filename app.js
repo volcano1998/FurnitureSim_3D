@@ -10,8 +10,8 @@ import {
   openingPoseCandidates,
   pointInVolume,
   poseQuaternion,
-} from "./planner.js?v=20260607-24";
-import { createManualModeController } from "./manual.js?v=20260607-24";
+} from "./planner.js?v=20260607-25";
+import { createManualModeController } from "./manual.js?v=20260607-25";
 
 const defaults = {
   aLength: 4,
