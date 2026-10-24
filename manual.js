@@ -176,9 +176,8 @@ export function createManualModeController({
   }
 
   function syncManualStartStatus(clearance) {
-    qs("#simulationStatus").textContent = qs("#manualIgnoreEntrance").checked
-      ? `Furniture starts just outside with ${clearance.toFixed(2)} clearance. Move it through the entrance.`
-      : "Furniture starts inside at the entrance-aligned pose.";
+    qs("#simulationStatus").textContent =
+      `Furniture starts just outside the entrance with ${clearance.toFixed(2)} clearance. Move it through the entrance.`;
   }
 
   function manualAllowedOpenings() {
@@ -932,14 +931,12 @@ export function createManualModeController({
       })
       : findManualFallbackPose(environment, furniture, manualClearance);
     manualEntranceOrientation = { ...insideCandidate };
-    manualStartPose = qs("#manualIgnoreEntrance").checked
-      ? createOutsideEntrancePose(
-        manualEntranceOrientation,
-        furniture,
-        environment,
-        manualClearance,
-      )
-      : { ...manualEntranceOrientation };
+    manualStartPose = createOutsideEntrancePose(
+      manualEntranceOrientation,
+      furniture,
+      environment,
+      manualClearance,
+    );
     manualPose = { ...manualStartPose };
     furnitureMesh.geometry.dispose();
     furnitureMesh.geometry = new THREE.BoxGeometry(
@@ -1014,14 +1011,12 @@ export function createManualModeController({
     stopAutoPilot();
     manualWon = false;
     manualHasEntered = false;
-    manualStartPose = qs("#manualIgnoreEntrance").checked
-      ? createOutsideEntrancePose(
-        manualEntranceOrientation,
-        simulationFurniture,
-        simulationEnvironment,
-        clearance,
-      )
-      : { ...manualEntranceOrientation };
+    manualStartPose = createOutsideEntrancePose(
+      manualEntranceOrientation,
+      simulationFurniture,
+      simulationEnvironment,
+      clearance,
+    );
     manualPose = { ...manualStartPose };
     clearManualTrail();
     updateManualPose(true);

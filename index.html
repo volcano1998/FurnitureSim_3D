@@ -14,7 +14,7 @@
       href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260607-22" />
+    <link rel="stylesheet" href="./styles.css?v=20260607-24" />
     <script type="importmap">
       {
         "imports": {
@@ -281,15 +281,9 @@
             <div class="furniture-grid">
               <label>Clearance<input id="clearance" type="number" min="0" step="0.05" value="0.1" /></label>
               <label>Max iterations<input id="maxIterations" type="number" min="1000" max="1000000" step="1000" value="150000" /></label>
-              <label>Solver mode
-                <select id="solverMode">
-                  <option value="rrt">RRT-Connect</option>
-                  <option value="heuristic">Heuristic + RRT corners</option>
-                </select>
-              </label>
             </div>
             <label class="simulation-check">
-              <input id="allowRoll" type="checkbox" />
+              <input id="allowRoll" type="checkbox" checked />
               Allow roll sampling
             </label>
             <label class="simulation-check">
@@ -422,6 +416,6 @@
       <p>Green: clear · Yellow: tight clearance · Red: collision</p>
     </section>
 
-    <script type="module" src="./app.js?v=20260607-22"></script>
+    <script type="module" src="./app.js?v=20260607-24"></script>
   </body>
 </html>

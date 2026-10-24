@@ -17,9 +17,7 @@ Runs entirely in your browser. No install, no account, no build step.
 - **3D room editor.** Every room is a box defined by an origin and three edge vectors (`O + s·A + t·B + u·C`). Stretch it, skew it, add more boxes, and connect them into L-shaped or winding hallways.
 - **Entrance and exit.** Click two outside faces. Those are the only doorways; every other wall is solid.
 - **Furniture as a box.** Set its length, width and height, plus a safety **clearance** that grows the box on every side.
-- **Two automatic solvers.**
-  - **RRT-Connect**: a probabilistic planner that grows two trees through 6-D pose space until they meet.
-  - **Straight-shot heuristic**: a deterministic planner that aligns the furniture with the corridor and slides it in, and tells you which checkpoint failed if it can't.
+- **Automatic solver.** **RRT-Connect** is a probabilistic planner that grows two trees through 6-D pose space until they meet. Roll sampling is on by default; turn it off for a faster, 5-D search.
 - **Manual mode.** Hold <kbd>M</kbd> and drag the furniture yourself. The box turns green when legal, yellow when outside and red on collision. **Auto Pilot** snaps a furniture edge parallel to a room edge for you.
 - **Hybrid mode.** Get the furniture inside by hand, then hand over to the solver from your exact pose.
 - **Clear verdicts.** A pop-up tells you **"It fits!"** or **"No route found"**, and you can scrub the route on a timeline.
@@ -68,7 +66,7 @@ Then open <http://localhost:8000>. ES modules need to be served over HTTP, so do
 | --- | --- |
 | `index.html`, `styles.css` | App markup and styling |
 | `app.js` | Scene, room editing, step flow, UI state, animation |
-| `planner.js` | Furniture geometry, collision checks, RRT-Connect and the heuristic solver |
+| `planner.js` | Furniture geometry, collision checks, RRT-Connect solver |
 | `manual.js` | Drag-it-yourself mode and Auto Pilot |
 | `slides/` | The presentation (HTML and PowerPoint) |
 | `AGENTS.md` | Conventions and notes for contributors and coding agents |

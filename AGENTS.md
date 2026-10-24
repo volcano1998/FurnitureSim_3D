@@ -101,6 +101,10 @@ Manual traversal uses portal-aware validation from `planner.js`:
 - Once fully inside, only the entrance and exit are valid portals.
 - Other exterior faces remain solid.
 
+Manual mode always starts with the furniture fully outside the entrance. The
+"ignore entrance edges until fully inside" checkbox only controls whether the
+exterior staging area is unbounded; it does not change the start pose.
+
 When changing manual start placement, verify every clearance-expanded furniture
 vertex is outside all room volumes. The start position is produced by
 `createOutsideEntrancePose()` in `manual.js`.
@@ -163,6 +167,10 @@ prove that no route exists.
   yields through the progress callback loop.
 
 ## Heuristic Solver
+
+The heuristic solver is no longer exposed in the UI (the solver-mode selector was
+removed); the code in `planner.js` is kept but unused. Roll sampling is on by
+default.
 
 The straight heuristic solver is deterministic and returns named physical
 checkpoints even when it fails.

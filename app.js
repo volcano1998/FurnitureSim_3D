@@ -10,8 +10,8 @@ import {
   openingPoseCandidates,
   pointInVolume,
   poseQuaternion,
-} from "./planner.js?v=20260607-22";
-import { createManualModeController } from "./manual.js?v=20260607-22";
+} from "./planner.js?v=20260607-24";
+import { createManualModeController } from "./manual.js?v=20260607-24";
 
 const defaults = {
   aLength: 4,
@@ -370,7 +370,7 @@ function serializeProject() {
       height: Number(document.querySelector("#furnitureHeight").value),
       clearance: Number(document.querySelector("#clearance").value),
       maxIterations: Number(document.querySelector("#maxIterations").value),
-      solverMode: document.querySelector("#solverMode").value,
+      solverMode: "rrt",
       allowRoll: document.querySelector("#allowRoll").checked,
     },
     preferences: {
@@ -533,9 +533,7 @@ function restoreProject(data) {
   document.querySelector("#clearance").value = furniture.clearance ?? 0.1;
   document.querySelector("#maxIterations").value =
     furniture.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-  document.querySelector("#solverMode").value =
-    furniture.solverMode ?? "rrt";
-  document.querySelector("#allowRoll").checked = Boolean(furniture.allowRoll);
+  document.querySelector("#allowRoll").checked = furniture.allowRoll ?? true;
 
   const restoredSelection =
     objectMap.get(data.selectedObjectId) ?? objects[0];
@@ -2228,9 +2226,7 @@ async function runSimulation(startPose = null) {
   simulationEnvironment = { ...environment, entrance, exit };
   simulationFurniture = furniture;
   runButton.disabled = true;
-  const solverMode = startPose
-    ? "rrt"
-    : document.querySelector("#solverMode").value;
+  const solverMode = "rrt";
   status.textContent = startPose
     ? "Planning from the assisted inside pose…"
     : solverMode === "heuristic"

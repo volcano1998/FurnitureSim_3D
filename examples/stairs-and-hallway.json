@@ -1,0 +1,124 @@
+{
+  "format": "can-it-fit",
+  "version": 1,
+  "savedAt": "2026-10-24T17:15:52.571Z",
+  "objects": [
+    {
+      "id": 1,
+      "params": {
+        "aLength": 5.3,
+        "bLength": 2.8,
+        "cLength": 2.9,
+        "angleAB": 90,
+        "angleAC": 90,
+        "angleBC": 90
+      },
+      "position": [
+        7.917031553492813,
+        -2.044278077604094,
+        -2.1869461112973543
+      ],
+      "quaternion": [
+        1.3877787807814457e-16,
+        0,
+        -1,
+        1.3877787807814457e-17
+      ]
+    },
+    {
+      "id": 2,
+      "params": {
+        "aLength": 5.3,
+        "bLength": 2.8,
+        "cLength": 2.9,
+        "angleAB": 78,
+        "angleAC": 58,
+        "angleBC": 90
+      },
+      "position": [
+        2.5670315534928143,
+        -2.044278077604094,
+        0.7130538887026443
+      ],
+      "quaternion": [
+        0.745520485262773,
+        0.6037105853855872,
+        -0.17770110771886588,
+        0.2194425926351565
+      ]
+    },
+    {
+      "id": 3,
+      "params": {
+        "aLength": 5.3,
+        "bLength": 2.8,
+        "cLength": 2.9,
+        "angleAB": 90,
+        "angleAC": 90,
+        "angleBC": 90
+      },
+      "position": [
+        1.2189635148269398,
+        2.313206140295371,
+        -4.995518211733341
+      ],
+      "quaternion": [
+        0,
+        0,
+        0,
+        1
+      ]
+    }
+  ],
+  "attachments": [
+    {
+      "id": 1,
+      "aId": 1,
+      "bId": 2,
+      "faceA": 2,
+      "faceB": 4,
+      "rotation": -90,
+      "offsetU": 1.3,
+      "offsetV": 0
+    },
+    {
+      "id": 2,
+      "aId": 3,
+      "bId": 2,
+      "faceA": 2,
+      "faceB": 5,
+      "rotation": 0,
+      "offsetU": 1.2,
+      "offsetV": 0
+    }
+  ],
+  "selectedObjectId": 3,
+  "modelConfirmed": true,
+  "entranceId": "3:4",
+  "exitId": "1:4",
+  "openingsConfirmed": true,
+  "furniture": {
+    "length": 2.5,
+    "width": 1.2,
+    "height": 1.2,
+    "clearance": 0.1,
+    "maxIterations": 150000,
+    "solverMode": "rrt",
+    "allowRoll": false
+  },
+  "preferences": {
+    "showAnnotations": false
+  },
+  "camera": {
+    "position": [
+      -10.011736828021366,
+      -9.80951103509375,
+      33.97978260925944
+    ],
+    "target": [
+      3.2,
+      1.4,
+      1.5
+    ]
+  }
+}
