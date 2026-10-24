@@ -2,7 +2,7 @@
 
 **Will that sofa make it through the hallway?** Build a room in 3D, drop in a piece of furniture, and let a motion planner find out, or try to squeeze it through yourself.
 
-### 👉 [**Launch the app**](https://volcano1998.github.io/FurnitureSim_3D/) &nbsp;·&nbsp; 🎞️ [**Watch the slides**](https://volcano1998.github.io/FurnitureSim_3D/slides/)
+### 👉 [**Launch the app**](https://volcano1998.github.io/FurnitureSim_3D/)
 
 <p align="center">
   <img src="slides/img/stairs-route.jpg" alt="Can It Fit? showing a sofa-sized box travelling up a staircase between two hallways" width="860">
@@ -48,7 +48,7 @@ Changed your mind? Click any earlier step in the progress bar to go back and edi
 
 RRT-Connect is probabilistic: finding a route proves the furniture fits, but failing to find one doesn't prove it can't. Run it again or raise the iteration limit. The app never "fixes" a failure by silently shrinking the clearance.
 
-The slides walk through all of this with diagrams: [**open the slides**](https://volcano1998.github.io/FurnitureSim_3D/slides/) or [download the PowerPoint with speaker notes](slides/CanItFit_v5.pptx).
+The slides walk through all of this with diagrams: [**download the PowerPoint with speaker notes**](slides/CanItFit_demo.pptx).
 
 ## Run it locally
 
@@ -70,7 +70,7 @@ Then open <http://localhost:8000>. ES modules need to be served over HTTP, so do
 | `app.js` | Scene, room editing, step flow, UI state, animation |
 | `planner.js` | Furniture geometry, collision checks, RRT-Connect solver |
 | `manual.js` | Drag-it-yourself mode and Auto Pilot |
-| `slides/` | The presentation (HTML and PowerPoint) |
+| `slides/` | The presentation (PowerPoint with speaker notes) |
 | `AGENTS.md` | Conventions and notes for contributors and coding agents |
 
 ## Limitations
